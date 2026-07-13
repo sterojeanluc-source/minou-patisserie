@@ -1,0 +1,27 @@
+{
+  "overview": "Minou Patisserie is a complete business management system for a patisserie/bakery. It covers daily sales, inventory tracking, client credit management, expense logging, user roles, and reporting — all in French, running entirely in the browser.",
+  "features": [
+    "Sales management with shopping cart and checkout",
+    "Inventory tracking with low-stock alerts",
+    "Client profiles and credit balance tracking",
+    "Expense recording by category",
+    "Dashboard with daily metrics",
+    "Admin and employee user roles with PIN security",
+    "Light/dark theme with persistence",
+    "CSV export and print for reports",
+    "Data backup and restore via JSON",
+    "Session timeout after 15 minutes"
+  ],
+  "category": "productivity",
+  "tags": [
+    "french",
+    "patisserie",
+    "business",
+    "inventory",
+    "sales",
+    "clients",
+    "pos",
+    "management"
+  ],
+  "last_updated": "2026-05-19T16:04:01.320Z"
+}

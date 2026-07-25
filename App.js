@@ -11,7 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 export default function App() {
   // --- ÉTATS SYSTÈME ---
-  const [lang, setLang] = useState('ht'); // Par défaut Kreyòl
+  const [lang, setLang] = useState('ht'); // Par défaut Kreyòl (ht)
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState('');
   const [view, setView] = useState('');
@@ -25,10 +25,12 @@ export default function App() {
   const [grades, setGrades] = useState([]);
   const [calculatedAverage, setCalculatedAverage] = useState(0);
   const [rank, setRank] = useState('...');
+  const [totalClass, setTotalClass] = useState(0);
   const [presenceStatus, setPresenceStatus] = useState('...');
   const [announcements, setAnnouncements] = useState([]);
   const [stats, setStats] = useState({ totalEncaisse: 0 });
   const [kLog, setKLog] = useState(null);
+  const [disciplineLogs, setDisciplineLogs] = useState([]); // Pour afficher aux parents
 
   // --- FILTRE TRIMESTRE ---
   const [selectedPeriode, setSelectedPeriode] = useState(1); // 1 = 1er Trimestre, 2 = 2ème, etc.
@@ -87,7 +89,8 @@ export default function App() {
       presence_a: "Absent",
       presence_l: "En Retard",
       liaison_sec: "Liaison Kindergarten (Repas / Sieste)",
-      discipline_sec: "Signaler un Incident de Discipline"
+      discipline_sec: "Signaler un Incident de Discipline",
+      discipline_parent_title: "🚨 Rapport de Discipline"
     },
     ht: {
       welcome: "Lekòl Pam",
@@ -131,7 +134,8 @@ export default function App() {
       presence_a: "Pa la",
       presence_l: "An Reta",
       liaison_sec: "Kaye Kindergarten (Manje / Dòmi)",
-      discipline_sec: "Siyalman Disiplin"
+      discipline_sec: "Siyalman Disiplin",
+      discipline_parent_title: "🚨 Rapò Disiplin"
     }
   };
   const t = (key) => translations[lang][key] || key;
@@ -170,6 +174,25 @@ export default function App() {
     };
     restoreSession();
   }, []);
+
+  // Hook de sauvegarde automatique d'état de session dans AsyncStorage
+  useEffect(() => {
+    const saveSession = async () => {
+      try {
+        if (isLoggedIn) {
+          await AsyncStorage.setItem('cached_user_session', JSON.stringify({
+            role: userRole,
+            view: view,
+            student: student,
+            studentsList: studentsList
+          }));
+        }
+      } catch (e) {
+        console.warn("Erreur de sauvegarde de la session", e);
+      }
+    };
+    saveSession();
+  }, [isLoggedIn, userRole, view, student, studentsList]);
 
   const fetchAnnouncements = async () => {
     const { data } = await supabase
@@ -228,6 +251,7 @@ export default function App() {
         .eq('classe', student.classe);
 
       if (classMates) {
+        setTotalClass(classMates.length);
         const classMatesIds = classMates.map(c => c.id);
 
         // On récupère toutes les notes de la classe pour ce trimestre
@@ -281,6 +305,16 @@ export default function App() {
         setKLog(kData);
       } else {
         setKLog(null);
+      }
+
+      // 6. Récupération unifiée des incidents disciplinaires (table: disciplines)
+      const { data: discData } = await supabase
+        .from('disciplines')
+        .select('*')
+        .eq('eleve_id', student.id)
+        .order('date_incident', { ascending: false });
+      if (discData) {
+        setDisciplineLogs(discData);
       }
     } catch (err) {
       console.error("Erreur de chargement", err);
@@ -523,7 +557,7 @@ export default function App() {
     }
   };
 
-  // --- REPORT INCIDENTS DISCIPLINE ---
+  // --- REPORT INCIDENTS DISCIPLINE (Table: disciplines, Colonnes: eleve_id, incident, date_incident) ---
   const addDisciplineIncident = async (studentId) => {
     const note = disciplineNotes[studentId];
     if (!note || !note.trim()) {
@@ -805,7 +839,7 @@ export default function App() {
                       </View>
                       <View style={styles.kpiBox}>
                         <Text style={styles.kpiLabel}>{t('rank')}</Text>
-                        <Text style={[styles.kpiValue, {color: '#FFCC00'}]}>{rank}</Text>
+                        <Text style={[styles.kpiValue, {color: '#FFCC00'}]}>{rank} / {totalClass || '...'}</Text>
                       </View>
                    </View>
                 </View>
@@ -852,12 +886,25 @@ export default function App() {
               </View>
             )}
 
+            {/* RAPPORT DE DISCIPLINE (DANS LE PORTAIL PARAN POUR LA MAQUETTE COMPLETE) */}
+            {disciplineLogs.length > 0 && (
+              <View style={styles.card}>
+                <Text style={styles.liaisonHeader}>{t('discipline_parent_title')}</Text>
+                {disciplineLogs.map((log) => (
+                  <View key={log.id} style={styles.disciplineLogItem}>
+                    <Text style={{color: '#FFB3C1', fontSize: 13, fontWeight: 'bold'}}>{log.date_incident}</Text>
+                    <Text style={{color: '#FFF', fontSize: 13, marginTop: 2}}>{log.incident}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
             {/* SOLDE BANCAIRE ET OPTIONS DE PAIEMENT (MONCASH EXCLUSIF) */}
             <View style={styles.paymentCard}>
                <Text style={styles.paymentLabel}>{t('solde')}</Text>
                <Text style={styles.paymentAmount}>{student.solde_du} HTG</Text>
 
-               {/* Barre de progression de la dette */}
+               {/* Barre de progression de la dèt */}
                <View style={styles.progressContainer}>
                  <View style={styles.progressBarBg}>
                    <View style={[styles.progressBarFill, {width: `${Math.max(0, Math.min(100, ((45000 - student.solde_du) / 45000) * 100))}%`}]} />
@@ -1003,7 +1050,7 @@ export default function App() {
                     </View>
                   )}
 
-                  {/* Formulaire de signalement de discipline (Discipline Log) */}
+                  {/* Formulaire de signalement de discipline (Discipline Log - Table: disciplines) */}
                   <View style={styles.subSectionContainer}>
                     <Text style={styles.subSectionTitle}>{t('discipline_sec')}</Text>
                     <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 5}}>
@@ -1234,6 +1281,8 @@ const styles = StyleSheet.create({
   liaisonHeader: { color: '#FFCC00', fontWeight: 'bold', marginBottom: 10 },
   kLogContainer: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 5 },
   kLogItem: { color: '#FFF', fontSize: 14 },
+
+  disciplineLogItem: { paddingVertical: 8, borderBottomWidth: 1, borderColor: '#3A506B' },
 
   paymentCard: { backgroundColor: '#131A35', padding: 18, borderRadius: 15, marginBottom: 15 },
   paymentLabel: { color: '#8DA9C4', fontSize: 12, textTransform: 'uppercase' },

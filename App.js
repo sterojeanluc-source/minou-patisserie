@@ -10,16 +10,25 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function App() {
-  // --- ÉTATS SYSTÈME ---
+  // --- ÉTATS SYSTEMES & SAAS (MULTI-TENANT) ---
   const [lang, setLang] = useState('ht'); // Par défaut Kreyòl (ht)
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userRole, setUserRole] = useState('');
-  const [view, setView] = useState('');
+  const [userRole, setUserRole] = useState('');  // 'super_admin', 'school_admin', 'teacher', 'secretary', 'parent'
+  const [view, setView] = useState('');  // Vues associées
   const [loginPhone, setLoginPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // --- ÉTATS DONNÉES ---
+  // --- ÉTATS SAAS (ÉCOLES / TENANTS) ---
+  const [selectedSchoolId, setSelectedSchoolId] = useState(''); // École courante pour les opérations
+  const [schools, setSchools] = useState([
+    { id: 'ecole_lpm_001', nom: 'Lekòl Pam - Delmas', logo: 'https://via.placeholder.com/80/1A365D/FFFFFF?text=LPM', subdomain: 'delmas', statut_abonnement: 'active', theme_color: '#0A1128' },
+    { id: 'ecole_lpm_002', nom: 'Collège de la Trinité - Pétion-Ville', logo: 'https://via.placeholder.com/80/D90429/FFFFFF?text=TRINITE', subdomain: 'trinite', statut_abonnement: 'active', theme_color: '#1C2541' },
+    { id: 'ecole_lpm_003', nom: 'Institution Saint-Louis de Gonzague', logo: 'https://via.placeholder.com/80/06D6A0/FFFFFF?text=SLG', subdomain: 'slg', statut_abonnement: 'active', theme_color: '#131A35' }
+  ]);
+  const [schoolStats, setSchoolStats] = useState({}); // Statistiques SaaS par école
+
+  // --- ÉTATS DONNÉES ÉLÈVES (FILTRÉS PAR ECOLE_ID) ---
   const [student, setStudent] = useState(null);
   const [studentsList, setStudentsList] = useState([]);
   const [grades, setGrades] = useState([]);
@@ -30,26 +39,27 @@ export default function App() {
   const [announcements, setAnnouncements] = useState([]);
   const [stats, setStats] = useState({ totalEncaisse: 0 });
   const [kLog, setKLog] = useState(null);
-  const [disciplineLogs, setDisciplineLogs] = useState([]); // Pour afficher aux parents
+  const [disciplineLogs, setDisciplineLogs] = useState([]);
 
   // --- FILTRE TRIMESTRE ---
-  const [selectedPeriode, setSelectedPeriode] = useState(1); // 1 = 1er Trimestre, 2 = 2ème, etc.
+  const [selectedPeriode, setSelectedPeriode] = useState(1);
 
   // --- ÉTATS FORMULAIRES ---
+  const [newSchoolForm, setNewSchoolForm] = useState({ nom: '', subdomain: '', initialFee: '15000' });
   const [newStudent, setNewStudent] = useState({ nom: '', prenom: '', classe: '9ème AF', telephone_parent: '', solde_du: '15000' });
   const [notesMap, setNotesMap] = useState({});
   const [currentSubject, setCurrentSubject] = useState('Mathématiques');
   const [selectedClass, setSelectedClass] = useState('Toutes');
-  const [disciplineNotes, setDisciplineNotes] = useState({}); // { studentId: "texte incident" }
+  const [disciplineNotes, setDisciplineNotes] = useState({});
 
   const classesDisponibles = ['Toutes', 'Kindergarten', '1ère AF', '6ème AF', '9ème AF', 'NS4'];
   const matieresDisponibles = ['Mathématiques', 'Physique', 'SVT', 'Chimie', 'Français', 'Anglais', 'Créole'];
 
-  // --- TRADUCTIONS (Français & Kreyòl enrichis) ---
+  // --- TRADUCTIONS SAAS ---
   const translations = {
     fr: {
-      welcome: "Lekòl Pam",
-      login_sub: "Portail Éducatif",
+      welcome: "Lekòl Pam SaaS",
+      login_sub: "Portail Multi-Écoles",
       connect: "SE CONNECTER",
       logout: "Déconnexion",
       average: "Moyenne",
@@ -69,7 +79,7 @@ export default function App() {
       repas: "Repas",
       sieste: "Sieste",
       cahier_liaison: "Cahier de Liaison Maternelle",
-      input_placeholder: "Numéro de Téléphone du Parent",
+      input_placeholder: "Téléphone Parent ou Identifiant ('admin', 'prof', 'super')",
       class_filter: "Classe :",
       subject_filter: "Matière :",
       save_grades: "Enregistrer les Notes",
@@ -90,11 +100,18 @@ export default function App() {
       presence_l: "En Retard",
       liaison_sec: "Liaison Kindergarten (Repas / Sieste)",
       discipline_sec: "Signaler un Incident de Discipline",
-      discipline_parent_title: "🚨 Rapport de Discipline"
+      discipline_parent_title: "🚨 Rapport de Discipline",
+      saas_onboarding: "🏫 Ajouter une Nouvelle École (SaaS Onboarding)",
+      school_name: "Nom de l'école",
+      school_subdomain: "Sous-domaine / Ville",
+      school_submit: "Créer l'Espace École",
+      switch_school: "Changer d'École Active :",
+      saas_title: "🚀 Super-Administration SaaS",
+      saas_subtitle: "Statistiques Globales multi-établissements"
     },
     ht: {
-      welcome: "Lekòl Pam",
-      login_sub: "Espas Paran",
+      welcome: "Lekòl Pam SaaS",
+      login_sub: "Pòtay Tout Lekòl Yo",
       connect: "KONEKTE",
       logout: "Quitter",
       average: "MWAYÈN",
@@ -114,7 +131,7 @@ export default function App() {
       repas: "Repas",
       sieste: "Sieste",
       cahier_liaison: "🍼 Kàyè Swivi Kindergarten (Jodi a)",
-      input_placeholder: "Nimewo Telefòn Paran an",
+      input_placeholder: "Telefòn Paran oswa Identifyan ('admin', 'prof', 'super')",
       class_filter: "Klas :",
       subject_filter: "Matiè :",
       save_grades: "Anrejistre Nòt Yo",
@@ -135,12 +152,19 @@ export default function App() {
       presence_l: "An Reta",
       liaison_sec: "Kaye Kindergarten (Manje / Dòmi)",
       discipline_sec: "Siyalman Disiplin",
-      discipline_parent_title: "🚨 Rapò Disiplin"
+      discipline_parent_title: "🚨 Rapò Disiplin",
+      saas_onboarding: "🏫 Enskri yon lòt Lekòl (SaaS Onboarding)",
+      school_name: "Non Lekòl la",
+      school_subdomain: "Sous-domèn / Vil",
+      school_submit: "Kreye Espas Lekòl la",
+      switch_school: "Chwazi Lekòl pou w jere :",
+      saas_title: "🚀 Super-Administrasyon SaaS",
+      saas_subtitle: "Estatistik ak pèfòmans tout lekòl yo"
     }
   };
   const t = (key) => translations[lang][key] || key;
 
-  // --- CHARGEMENT AUTOMATIQUE ---
+  // --- AUTOMATIC LOADING & SYNCING ---
   useEffect(() => {
     if (isLoggedIn) {
       fetchAnnouncements();
@@ -150,7 +174,7 @@ export default function App() {
         fetchAdminTeacherData();
       }
     }
-  }, [view, isLoggedIn, student?.id, selectedPeriode]);
+  }, [view, isLoggedIn, student?.id, selectedPeriode, selectedSchoolId]);
 
   // Restauration automatique de session depuis AsyncStorage au démarrage
   useEffect(() => {
@@ -166,7 +190,13 @@ export default function App() {
           setView(session.view);
           if (session.student) setStudent(session.student);
           if (session.studentsList) setStudentsList(session.studentsList);
+          if (session.selectedSchoolId) setSelectedSchoolId(session.selectedSchoolId);
           setIsLoggedIn(true);
+        }
+
+        const cachedSchools = await AsyncStorage.getItem('cached_saas_schools');
+        if (cachedSchools) {
+          setSchools(JSON.parse(cachedSchools));
         }
       } catch (e) {
         console.warn("Erreur de récupération du cache local", e);
@@ -184,25 +214,33 @@ export default function App() {
             role: userRole,
             view: view,
             student: student,
-            studentsList: studentsList
+            studentsList: studentsList,
+            selectedSchoolId: selectedSchoolId
           }));
         }
+        await AsyncStorage.setItem('cached_saas_schools', JSON.stringify(schools));
       } catch (e) {
         console.warn("Erreur de sauvegarde de la session", e);
       }
     };
     saveSession();
-  }, [isLoggedIn, userRole, view, student, studentsList]);
+  }, [isLoggedIn, userRole, view, student, studentsList, selectedSchoolId, schools]);
 
   const fetchAnnouncements = async () => {
     const { data } = await supabase
       .from('annonces')
       .select('*')
+      .eq('ecole_id', selectedSchoolId)
       .order('date_creation', { ascending: false })
       .limit(2);
-    if (data) {
+    if (data && data.length > 0) {
       setAnnouncements(data);
       await AsyncStorage.setItem('cached_announcements', JSON.stringify(data));
+    } else {
+      // Fallback local mock alerts
+      setAnnouncements([
+        { id: 'a1', titre: 'Avi Finansyè', message: 'Tanpri solde kont nou avan egzamen trimès yo.' }
+      ]);
     }
   };
 
@@ -216,6 +254,7 @@ export default function App() {
         .from('eleves')
         .select('*')
         .eq('id', student.id)
+        .eq('ecole_id', selectedSchoolId)
         .maybeSingle();
       if (sData) {
         setStudent(sData);
@@ -226,7 +265,8 @@ export default function App() {
         .from('notes')
         .select('*')
         .eq('eleve_id', student.id)
-        .eq('periode', selectedPeriode);
+        .eq('periode', selectedPeriode)
+        .eq('ecole_id', selectedSchoolId);
 
       if (gData) {
         setGrades(gData);
@@ -248,7 +288,8 @@ export default function App() {
       const { data: classMates } = await supabase
         .from('eleves')
         .select('id, classe')
-        .eq('classe', student.classe);
+        .eq('classe', student.classe)
+        .eq('ecole_id', selectedSchoolId);
 
       if (classMates) {
         setTotalClass(classMates.length);
@@ -259,7 +300,8 @@ export default function App() {
           .from('notes')
           .select('eleve_id, note, coefficient')
           .in('eleve_id', classMatesIds)
-          .eq('periode', selectedPeriode);
+          .eq('periode', selectedPeriode)
+          .eq('ecole_id', selectedSchoolId);
 
         if (allClassGrades) {
           const leaderboard = classMates.map(member => {
@@ -291,6 +333,7 @@ export default function App() {
         .select('statut')
         .eq('eleve_id', student.id)
         .eq('date', today)
+        .eq('ecole_id', selectedSchoolId)
         .maybeSingle();
       setPresenceStatus(pData ? pData.statut : 'Non marqué');
 
@@ -301,6 +344,7 @@ export default function App() {
           .select('*')
           .eq('eleve_id', student.id)
           .eq('date_suivi', today)
+          .eq('ecole_id', selectedSchoolId)
           .maybeSingle();
         setKLog(kData);
       } else {
@@ -312,6 +356,7 @@ export default function App() {
         .from('disciplines')
         .select('*')
         .eq('eleve_id', student.id)
+        .eq('ecole_id', selectedSchoolId)
         .order('date_incident', { ascending: false });
       if (discData) {
         setDisciplineLogs(discData);
@@ -326,7 +371,11 @@ export default function App() {
   const fetchAdminTeacherData = async () => {
     setLoading(true);
     try {
-      const { data } = await supabase.from('eleves').select('*').order('nom');
+      const { data } = await supabase
+        .from('eleves')
+        .select('*')
+        .eq('ecole_id', selectedSchoolId)
+        .order('nom');
       if (data) {
         setStudentsList(data);
         const encaisse = data.reduce((acc, s) => acc + (15000 - s.solde_du), 0);
@@ -365,7 +414,11 @@ export default function App() {
 
   const uploadImage = async (studentId, uri) => {
     Alert.alert("Info", "Téléchargement de la photo...");
-    const { error } = await supabase.from('eleves').update({ photo_url: uri }).eq('id', studentId);
+    const { error } = await supabase
+      .from('eleves')
+      .update({ photo_url: uri })
+      .eq('id', studentId)
+      .eq('ecole_id', selectedSchoolId);
     if (!error) {
       fetchAdminTeacherData();
     } else {
@@ -373,7 +426,7 @@ export default function App() {
     }
   };
 
-  // --- CONNEXION & AUTHENTIFICATION ---
+  // --- CONNEXION & AUTHENTIFICATION (SaaS Multi-tenant Aware) ---
   const handleLogin = async () => {
     if (!loginPhone.trim()) {
       return Alert.alert("Erreur", "Veuillez entrer un identifiant ou numéro.");
@@ -385,27 +438,44 @@ export default function App() {
     let selectedStudent = null;
     let list = [];
 
+    // Sélection automatique de l'école par défaut si vide
+    const effectiveSchoolId = selectedSchoolId || schools[0].id;
+
     try {
-      if (id === 'admin') {
-        currentRole = 'admin';
+      if (id === 'super') {
+        // Super-Admin du SaaS global (gère toutes les écoles et l'onboarding)
+        currentRole = 'super_admin';
+        currentView = 'super_admin';
+        setIsLoggedIn(true);
+        setUserRole('super_admin');
+        setView('super_admin');
+      } else if (id === 'admin') {
+        currentRole = 'school_admin';
         currentView = 'admin';
         setIsLoggedIn(true);
-        setUserRole('admin');
+        setUserRole('school_admin');
         setView('admin');
+        setSelectedSchoolId(effectiveSchoolId);
       } else if (id === 'prof') {
         currentRole = 'teacher';
         currentView = 'teacher';
         setIsLoggedIn(true);
         setUserRole('teacher');
         setView('teacher');
+        setSelectedSchoolId(effectiveSchoolId);
       } else if (id === 'secretaire') {
         currentRole = 'secretary';
         currentView = 'enrollment';
         setIsLoggedIn(true);
         setUserRole('secretary');
         setView('enrollment');
+        setSelectedSchoolId(effectiveSchoolId);
       } else {
-        const { data } = await supabase.from('eleves').select('*').eq('telephone_parent', loginPhone);
+        // Connexion d'un parent
+        const { data } = await supabase
+          .from('eleves')
+          .select('*')
+          .eq('telephone_parent', loginPhone);
         if (data && data.length > 0) {
           list = data;
           setStudentsList(data);
@@ -418,6 +488,7 @@ export default function App() {
             setStudent(data[0]);
             currentView = 'parent';
             setView('parent');
+            setSelectedSchoolId(data[0].ecole_id || effectiveSchoolId);
           } else {
             currentView = 'choose_child';
             setView('choose_child');
@@ -433,7 +504,8 @@ export default function App() {
           role: currentRole,
           view: currentView,
           student: selectedStudent,
-          studentsList: list
+          studentsList: list,
+          selectedSchoolId: selectedSchoolId || effectiveSchoolId
         }));
       }
     } catch (err) {
@@ -454,7 +526,11 @@ export default function App() {
   };
 
   const updateDebt = async (id, montant) => {
-    await supabase.from('eleves').update({ solde_du: montant, statut_paiement: montant === 0 ? 'Payé' : 'Impayé' }).eq('id', id);
+    await supabase
+      .from('eleves')
+      .update({ solde_du: montant, statut_paiement: montant === 0 ? 'Payé' : 'Impayé' })
+      .eq('id', id)
+      .eq('ecole_id', selectedSchoolId);
     if (view === 'parent') fetchParentData(); else fetchAdminTeacherData();
   };
 
@@ -473,7 +549,8 @@ export default function App() {
           classe: newStudent.classe,
           telephone_parent: newStudent.telephone_parent,
           solde_du: parseFloat(newStudent.solde_du || '15000'),
-          statut_paiement: 'Impayé'
+          statut_paiement: 'Impayé',
+          ecole_id: selectedSchoolId
         });
       if (error) throw error;
 
@@ -498,6 +575,7 @@ export default function App() {
         .select('id')
         .eq('eleve_id', studentId)
         .eq('date', today)
+        .eq('ecole_id', selectedSchoolId)
         .maybeSingle();
 
       if (existingPresence) {
@@ -511,7 +589,8 @@ export default function App() {
           .insert({
             eleve_id: studentId,
             date: today,
-            statut: status
+            statut: status,
+            ecole_id: selectedSchoolId
           });
       }
       Alert.alert("Prezans", `Siyalman "${status}" la anrejistre.`);
@@ -530,6 +609,7 @@ export default function App() {
         .select('id')
         .eq('eleve_id', studentId)
         .eq('date_suivi', today)
+        .eq('ecole_id', selectedSchoolId)
         .maybeSingle();
 
       const updatePayload = {};
@@ -545,7 +625,8 @@ export default function App() {
           eleve_id: studentId,
           date_suivi: today,
           repas: false,
-          sieste: false
+          sieste: false,
+          ecole_id: selectedSchoolId
         };
         insertPayload[type] = val;
         await supabase.from('Kindergarden').insert(insertPayload);
@@ -570,7 +651,8 @@ export default function App() {
         .insert({
           eleve_id: studentId,
           incident: note.trim(),
-          date_incident: new Date().toISOString().split('T')[0]
+          date_incident: new Date().toISOString().split('T')[0],
+          ecole_id: selectedSchoolId
         });
 
       if (error) throw error;
@@ -596,6 +678,7 @@ export default function App() {
           .eq('eleve_id', studentId)
           .eq('matiere', currentSubject)
           .eq('periode', selectedPeriode)
+          .eq('ecole_id', selectedSchoolId)
           .maybeSingle();
 
         if (existingGrade) {
@@ -611,7 +694,8 @@ export default function App() {
               matiere: currentSubject,
               note: noteValue,
               periode: selectedPeriode,
-              coefficient: 1
+              coefficient: 1,
+              ecole_id: selectedSchoolId
             });
         }
       });
@@ -625,6 +709,26 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // --- ONBOARDING NOUVELLE ECOLE (SaaS Feature) ---
+  const handleCreateSchool = () => {
+    if (!newSchoolForm.nom.trim() || !newSchoolForm.subdomain.trim()) {
+      return Alert.alert("Erreur", "Tanpri ranpli tout chan lekòl yo!");
+    }
+    const newId = `ecole_lpm_00${schools.length + 1}`;
+    const newSchoolObj = {
+      id: newId,
+      nom: newSchoolForm.nom,
+      logo: 'https://via.placeholder.com/80/7D8597/FFFFFF?text=' + newSchoolForm.subdomain.toUpperCase(),
+      subdomain: newSchoolForm.subdomain.toLowerCase(),
+      statut_abonnement: 'active',
+      theme_color: '#1C2541'
+    };
+
+    setSchools(prev => [...prev, newSchoolObj]);
+    setNewSchoolForm({ nom: '', subdomain: '', initialFee: '15000' });
+    Alert.alert("SaaS Success", "Lekòl la kreye ak siksè ! Ou ka kòmanse enskri elèv yo.");
   };
 
   const changeLanguage = async () => {
@@ -673,6 +777,22 @@ export default function App() {
         <Text style={styles.loginTitle}>{t('welcome')}</Text>
         <Text style={styles.loginSub}>{t('login_sub')}</Text>
 
+        {/* Sélecteur d'école lors du Login */}
+        <Text style={[styles.label, {color: '#8DA9C4', alignSelf: 'flex-start', marginTop: 10}]}>{t('switch_school')}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginVertical: 10, maxHeight: 50}}>
+          <View style={{flexDirection: 'row'}}>
+            {schools.map(sch => (
+              <TouchableOpacity
+                key={sch.id}
+                style={[styles.smallFilterBtn, (selectedSchoolId === sch.id || (!selectedSchoolId && schools[0].id === sch.id)) && styles.smallFilterBtnActive]}
+                onPress={() => setSelectedSchoolId(sch.id)}
+              >
+                <Text style={[styles.filterBtnText, (selectedSchoolId === sch.id || (!selectedSchoolId && schools[0].id === sch.id)) && styles.filterBtnTextActive]}>{sch.nom.split(' - ')[0]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+
         <TextInput
           placeholder={t('input_placeholder')}
           placeholderTextColor="#7D8597"
@@ -699,13 +819,13 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0A1128" />
 
-      {/* HEADER PREMIUM (Inspiré par les maquettes) */}
+      {/* HEADER PREMIUM (SaaS Multi-tenant / Dynamic school label) */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View style={styles.headerTitleContainer}>
             <View style={styles.miniLogo}><Text style={styles.miniLogoText}>L</Text></View>
-            <View>
-              <Text style={styles.headerTitle}>{t('welcome')}</Text>
+            <View style={{ flexShrink: 1 }}>
+              <Text style={styles.headerTitle} numberOfLines={1}>{schools.find(s => s.id === selectedSchoolId)?.nom || t('welcome')}</Text>
               <Text style={styles.headerSubtitle}>{view === 'parent' ? t('login_sub') : t('stats')}</Text>
             </View>
           </View>
@@ -723,10 +843,15 @@ export default function App() {
           </View>
         </View>
 
-        {/* TABS ADMIN/SECRETAIRE */}
-        {(userRole === 'admin' || userRole === 'secretary') && (
+        {/* TABS ADMIN/SECRETAIRE/SUPER-ADMIN */}
+        {(userRole === 'school_admin' || userRole === 'secretary' || userRole === 'super_admin') && (
           <View style={styles.tabBar}>
-            {userRole === 'admin' && (
+            {userRole === 'super_admin' && (
+              <TouchableOpacity onPress={() => setView('super_admin')} style={[styles.tab, view === 'super_admin' && styles.tabActive]}>
+                <Text style={[styles.tabText, view === 'super_admin' && styles.tabTextActive]}>SaaS</Text>
+              </TouchableOpacity>
+            )}
+            {(userRole === 'school_admin' || userRole === 'super_admin') && (
               <TouchableOpacity onPress={() => setView('admin')} style={[styles.tab, view === 'admin' && styles.tabActive]}>
                 <Text style={[styles.tabText, view === 'admin' && styles.tabTextActive]}>{t('stats')}</Text>
               </TouchableOpacity>
@@ -760,7 +885,7 @@ export default function App() {
                 <TouchableOpacity
                   key={s.id}
                   style={styles.childAvatarCard}
-                  onPress={() => { setStudent(s); setView('parent'); }}
+                  onPress={() => { setStudent(s); setView('parent'); setSelectedSchoolId(s.ecole_id || schools[0].id); }}
                 >
                   <Image source={{ uri: s.photo_url || 'https://via.placeholder.com/100' }} style={styles.largeAvatar} />
                   <Text style={styles.childAvatarName}>{s.prenom}</Text>
@@ -781,7 +906,7 @@ export default function App() {
                   {studentsList.map(s => (
                     <TouchableOpacity
                       key={s.id}
-                      onPress={() => setStudent(s)}
+                      onPress={() => { setStudent(s); setSelectedSchoolId(s.ecole_id || schools[0].id); }}
                       style={[styles.avatarBadge, student.id === s.id && styles.avatarBadgeActive]}
                     >
                       <Image source={{ uri: s.photo_url || 'https://via.placeholder.com/100' }} style={styles.miniAvatar} />
@@ -960,7 +1085,13 @@ export default function App() {
         {/* --- 3. VUE ENSEIGNANT (SAISIE DE NOTES, ATTENDANCE, INCIDENTS, MATERNELLE) --- */}
         {view === 'teacher' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('teacher')}</Text>
+            <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15}}>
+              <Text style={styles.cardTitle}>{t('teacher')}</Text>
+              {/* Sélecteur d'école active pour le personnel */}
+              <View style={styles.schoolSelectorHeader}>
+                <Text style={{color: '#FFCC00', fontSize: 11, fontWeight: 'bold'}}>{schools.find(sc => sc.id === selectedSchoolId)?.nom.split(' - ')[0]}</Text>
+              </View>
+            </View>
 
             <View style={styles.filterRow}>
               <View style={{flex: 1, marginRight: 5}}>
@@ -1145,7 +1276,7 @@ export default function App() {
                 </View>
                 <View style={[styles.row, {marginTop: 10}]}>
                    <TouchableOpacity onPress={() => takePhoto(s.id)} style={styles.btnSmall}><Text>📸 Photo</Text></TouchableOpacity>
-                   <TouchableOpacity onPress={() => {setStudent(s); setView('parent');}} style={styles.btnSmall}><Text>👁️ Gade</Text></TouchableOpacity>
+                   <TouchableOpacity onPress={() => {setStudent(s); setView('parent'); setSelectedSchoolId(s.ecole_id || schools[0].id);}} style={styles.btnSmall}><Text>👁️ Gade</Text></TouchableOpacity>
                    <TouchableOpacity onPress={() => updateDebt(s.id, 0)} style={styles.btnSmall}><Text>💰 Sòlde</Text></TouchableOpacity>
                 </View>
               </View>
@@ -1153,7 +1284,69 @@ export default function App() {
           </View>
         )}
 
-        {/* --- 5. VUE ADMIN STATS (SI ADMIN CONNECTÉ) --- */}
+        {/* --- 5. VUE SUPER-ADMIN PORTAL (SaaS Onboarding & Metrics Dashboard) --- */}
+        {view === 'super_admin' && (
+          <View>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>{t('saas_title')}</Text>
+              <Text style={styles.subtext}>{t('saas_subtitle')}</Text>
+
+              <View style={styles.saasMetricsRow}>
+                <View style={styles.saasKpiCard}>
+                  <Text style={styles.saasKpiValue}>{schools.length}</Text>
+                  <Text style={styles.saasKpiLabel}>Lekòl Anrejistre</Text>
+                </View>
+                <View style={styles.saasKpiCard}>
+                  <Text style={styles.saasKpiValue}>{schools.length * 15}0$</Text>
+                  <Text style={styles.saasKpiLabel}>SaaS ARR (HTG)</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* School Switcher for global management */}
+            <View style={styles.card}>
+              <Text style={styles.label}>{t('switch_school')}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginVertical: 10}}>
+                <View style={{flexDirection: 'row'}}>
+                  {schools.map(sch => (
+                    <TouchableOpacity
+                      key={sch.id}
+                      style={[styles.smallFilterBtn, selectedSchoolId === sch.id && styles.smallFilterBtnActive]}
+                      onPress={() => setSelectedSchoolId(sch.id)}
+                    >
+                      <Text style={[styles.filterBtnText, selectedSchoolId === sch.id && styles.filterBtnTextActive]}>{sch.nom}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+              <Text style={{color: '#8DA9C4', fontSize: 12, fontStyle: 'italic'}}>Super-Admin ap jere done lekòl sa a kounye a.</Text>
+            </View>
+
+            {/* Onboarding Form */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>{t('saas_onboarding')}</Text>
+              <TextInput
+                placeholder={t('school_name')}
+                placeholderTextColor="#7D8597"
+                style={styles.input}
+                value={newSchoolForm.nom}
+                onChangeText={(text) => setNewSchoolForm(prev => ({ ...prev, nom: text }))}
+              />
+              <TextInput
+                placeholder={t('school_subdomain')}
+                placeholderTextColor="#7D8597"
+                style={styles.input}
+                value={newSchoolForm.subdomain}
+                onChangeText={(text) => setNewSchoolForm(prev => ({ ...prev, subdomain: text }))}
+              />
+              <TouchableOpacity style={styles.saveBtn} onPress={handleCreateSchool}>
+                <Text style={styles.saveBtnText}>{t('school_submit')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* --- 6. VUE ADMIN STATS (SI ADMIN CONNECTÉ) --- */}
         {view === 'admin' && (
           <View>
             <View style={styles.card}>
@@ -1174,7 +1367,7 @@ export default function App() {
                 </View>
                 <View style={[styles.row, {marginTop: 10}]}>
                    <TouchableOpacity onPress={() => takePhoto(s.id)} style={styles.btnSmall}><Text>📸 Photo</Text></TouchableOpacity>
-                   <TouchableOpacity onPress={() => {setStudent(s); setView('parent');}} style={styles.btnSmall}><Text>👁️ Gade</Text></TouchableOpacity>
+                   <TouchableOpacity onPress={() => {setStudent(s); setView('parent'); setSelectedSchoolId(s.ecole_id || schools[0].id);}} style={styles.btnSmall}><Text>👁️ Gade</Text></TouchableOpacity>
                    <TouchableOpacity onPress={() => updateDebt(s.id, 0)} style={styles.btnSmall}><Text>💰 Sòlde</Text></TouchableOpacity>
                 </View>
               </View>
@@ -1201,10 +1394,10 @@ const styles = StyleSheet.create({
 
   header: { backgroundColor: '#131A35', padding: 20, paddingTop: 45, borderBottomWidth: 1, borderColor: '#1C2541' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitleContainer: { flexDirection: 'row', alignItems: 'center' },
-  miniLogo: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FFCC00', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+  headerTitleContainer: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginRight: 10 },
+  miniLogo: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FFCC00', justifyContent: 'center', alignItems: 'center', marginRight: 10, flexShrink: 0 },
   miniLogoText: { fontSize: 16, fontWeight: 'bold', color: '#0A1128' },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  headerTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   headerSubtitle: { color: '#8DA9C4', fontSize: 12 },
   onlineBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E293B', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, marginRight: 10 },
   pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#06D6A0', marginRight: 5 },
@@ -1330,5 +1523,11 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#0A1128', fontWeight: 'bold' },
 
   btnSmall: { padding: 8, borderRadius: 5, backgroundColor: '#1C2541', marginTop: 5 },
-  emptyText: { color: '#8DA9C4', fontSize: 13, fontStyle: 'italic', textAlign: 'center', marginTop: 10 }
+  emptyText: { color: '#8DA9C4', fontSize: 13, fontStyle: 'italic', textAlign: 'center', marginTop: 10 },
+
+  schoolSelectorHeader: { backgroundColor: '#1C2541', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  saasMetricsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  saasKpiCard: { flex: 1, backgroundColor: '#1C2541', padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5 },
+  saasKpiValue: { color: '#FFCC00', fontSize: 24, fontWeight: 'bold' },
+  saasKpiLabel: { color: '#8DA9C4', fontSize: 11, marginTop: 4 }
 });

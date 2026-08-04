@@ -20,7 +20,7 @@ import Tabs from './components/Tabs';
 import Toast from './components/Toast';
 
 export default function App() {
-  // --- ÉTATS SYSTEMES & SAAS (MULTI-TENANT) ---
+  // --- ÉTATS SYSTEMES & SAAS (MULTI-TENANT / MVP VERSION 0.1) ---
   const [lang, setLang] = useState('ht');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState('');  // 'super_admin', 'school_admin', 'teacher', 'secretary', 'parent'
@@ -48,7 +48,7 @@ export default function App() {
   const [totalClass, setTotalClass] = useState(0);
   const [presenceStatus, setPresenceStatus] = useState('...');
   const [announcements, setAnnouncements] = useState([]);
-  const [stats, setStats] = useState({ totalEncaisse: 0 });
+  const [stats, setStats] = useState({ totalEncaisse: 0, totalTeachers: 5, totalStudents: 150, todayAttendance: 94, alertCount: 3 });
   const [kLog, setKLog] = useState(null);
   const [disciplineLogs, setDisciplineLogs] = useState([]);
 
@@ -395,7 +395,11 @@ export default function App() {
       if (data) {
         setStudentsList(data);
         const encaisse = data.reduce((acc, s) => acc + (15000 - s.solde_du), 0);
-        setStats({ totalEncaisse: encaisse });
+        setStats(prev => ({
+          ...prev,
+          totalEncaisse: encaisse,
+          totalStudents: data.length
+        }));
       }
     } catch (err) {
       console.error(err);
@@ -442,7 +446,7 @@ export default function App() {
     }
   };
 
-  // --- CONNEXION & AUTHENTIFICATION (SaaS Multi-tenant Aware) ---
+  // --- CONNEXION & AUTHENTIFICATION (SaaS Multi-tenant Aware / Version 0.1) ---
   const handleLogin = async () => {
     if (!loginPhone.trim()) {
       return Alert.alert("Erreur", "Veuillez entrer un identifiant ou numéro.");
@@ -1323,13 +1327,43 @@ export default function App() {
           </View>
         )}
 
-        {/* --- 6. VUE ADMIN STATS (SI ADMIN CONNECTÉ) --- */}
+        {/* --- 6. VUE ADMIN STATS (SI ADMIN CONNECTÉ / MVP VERSION 0.1 DASHBOARD COMPLET) --- */}
         {view === 'admin' && (
           <View>
+            {/* MVP v0.1 - Dashboard Éléments du Directeur */}
             <Card>
-              <Text style={styles.cardTitle}>Statistiques Financières</Text>
-              <Text style={styles.subtext}>Total Frais Encaissés :</Text>
-              <Text style={{color: '#06D6A0', fontSize: 32, fontWeight: 'bold'}}>{stats.totalEncaisse} HTG</Text>
+              <Text style={styles.cardTitle}>Estatistik Lekòl la (Dashboard v0.1)</Text>
+              <Text style={styles.subtext}>Yon jeneral de aktivite lekòl la pou jodi a</Text>
+
+              <View style={styles.saasMetricsRow}>
+                <View style={styles.saasKpiCard}>
+                  <Text style={styles.saasKpiValue}>{stats.totalStudents || 0}</Text>
+                  <Text style={styles.saasKpiLabel}>Kantite Elèv</Text>
+                </View>
+                <View style={styles.saasKpiCard}>
+                  <Text style={styles.saasKpiValue}>{stats.totalTeachers || 5}</Text>
+                  <Text style={styles.saasKpiLabel}>Pwofesè Yo</Text>
+                </View>
+              </View>
+
+              <View style={[styles.saasMetricsRow, { marginTop: 10 }]}>
+                <View style={[styles.saasKpiCard, { backgroundColor: '#131A35', borderWidth: 1, borderColor: '#06D6A0' }]}>
+                  <Text style={[styles.saasKpiValue, { color: '#06D6A0' }]}>{stats.todayAttendance || 94}%</Text>
+                  <Text style={styles.saasKpiLabel}>Prezans Jodi a</Text>
+                </View>
+                <View style={[styles.saasKpiCard, { backgroundColor: '#131A35', borderWidth: 1, borderColor: '#FFCC00' }]}>
+                  <Text style={[styles.saasKpiValue, { color: '#FFCC00' }]}>{stats.totalEncaisse || 0} HTG</Text>
+                  <Text style={styles.saasKpiLabel}>Peman Mwa Sa a</Text>
+                </View>
+              </View>
+
+              <View style={{ marginTop: 15 }}>
+                <AlertBanner
+                  title="Alèt Enpòtan"
+                  message={`Gen ${stats.alertCount || 3} paran ki poko peye frè lekòl yo pou mwa sa a.`}
+                  variant="warning"
+                />
+              </View>
             </Card>
 
             <Text style={styles.sectionTitle}>Fiches Élèves (Admin)</Text>

@@ -20,7 +20,7 @@ import Tabs from './components/Tabs';
 import Toast from './components/Toast';
 
 export default function App() {
-  // --- ÉTATS SYSTEMES & SAAS (MULTI-TENANT / MVP VERSION 0.1 & 0.2) ---
+  // --- ÉTATS SYSTEMES & SAAS (MULTI-TENANT / MVP VERSION 0.1, 0.2, 0.3) ---
   const [lang, setLang] = useState('ht');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState('');  // 'super_admin', 'school_admin', 'teacher', 'secretary', 'parent'
@@ -64,6 +64,15 @@ export default function App() {
   const [currentSubject, setCurrentSubject] = useState('Mathématiques');
   const [selectedClass, setSelectedClass] = useState('Toutes');
   const [disciplineNotes, setDisciplineNotes] = useState({});
+
+  // --- ÉTATS ENSEIGNANT AVANCÉS (Kaye Tèks & Devwa & Mesaj) ---
+  const [teacherActiveTab, setTeacherActiveTab] = useState('apel'); // 'apel', 'not', 'kaye_teks', 'mesaj'
+  const [homeworkForm, setHomeworkForm] = useState({ matiere: 'Mathématiques', classe: '6ème AF', description: '', date_limite: '' });
+  const [teacherMessages, setTeacherMessages] = useState([
+    { id: 'm1', parent: 'Jean-Baptiste', message: 'Bonsoir prof, Junior a-t-il bien travaillé aujourd\'hui ?', unread: true, date: '18:12' },
+    { id: 'm2', parent: 'Saint-Preux', message: 'Je passerai régler les frais scolaires demain matin.', unread: false, date: 'Aujourd\'hui' }
+  ]);
+  const [messageReplyText, setMessageReplyText] = useState({});
 
   // --- ÉTATS WIZARD INSCRIPTION ÉLÈVE EN 4 ÉTAPES (MVP V0.2) ---
   const [wizardStep, setWizardStep] = useState(1);
@@ -152,7 +161,13 @@ export default function App() {
       serie_lbl: "Série (SMP/SVT/etc. pour NS4)",
       next_btn: "Suivant",
       prev_btn: "Précédent",
-      export_csv: "Exporter Transactions CSV"
+      export_csv: "Exporter Transactions CSV",
+      t_tab_apel: "Tactile Apèl",
+      t_tab_not: "Nòt",
+      t_tab_teks: "Kaye Tèks / Devwa",
+      t_tab_mesaj: "Mesaj Paran",
+      hw_desc: "Description du travail effectué / Devoir à faire",
+      hw_submit: "Publier dans le cahier de texte"
     },
     ht: {
       welcome: "Lekòl Pam SaaS",
@@ -211,12 +226,18 @@ export default function App() {
       step1: "1. Kalite Enskripsyon",
       step2: "2. Enfòmasyon Elèv (NIE & Seri)",
       step3: "3. Dokiman Obligatwa yo",
-      step4: "4. Frè ak Peman Premye Fwa",
+      step4: "4. Frais ak Peman Premye Fwa",
       nie_placeholder: "NIE (MENFP) - eg: 123-456-789-0",
       serie_lbl: "Seri (SMP/SVT/SMP pou NS4)",
       next_btn: "Suiv",
       prev_btn: "Retounen",
-      export_csv: "Ekspòte Tranzaksyon CSV"
+      export_csv: "Ekspòte Tranzaksyon CSV",
+      t_tab_apel: "Tactile Apèl",
+      t_tab_not: "Nòt",
+      t_tab_teks: "Kaye Tèks / Devwa",
+      t_tab_mesaj: "Mesaj Paran",
+      hw_desc: "Kisa elèv yo te travay jodi a / Devoir",
+      hw_submit: "Pibliye nan Kaye Tèks"
     }
   };
   const t = (key) => translations[lang][key] || key;
@@ -509,7 +530,7 @@ export default function App() {
     }
   };
 
-  // --- CONNEXION & AUTHENTIFICATION (SaaS Multi-tenant Aware / Version 0.1 & 0.2) ---
+  // --- CONNEXION & AUTHENTIFICATION (SaaS Multi-tenant Aware / Version 0.1 & 0.2 & 0.3) ---
   const handleLogin = async () => {
     if (!loginPhone.trim()) {
       return Alert.alert("Erreur", "Veuillez entrer un identifiant ou numéro.");
@@ -687,158 +708,40 @@ export default function App() {
     }
   };
 
-  // --- ATTENDANCE SYSTEM (TEACHER PORTAL) ---
-  const markPresence = async (studentId, status) => {
-    const today = new Date().toISOString().split('T')[0];
-    try {
-      const { data: existingPresence } = await supabase
-        .from('presences')
-        .select('id')
-        .eq('eleve_id', studentId)
-        .eq('date', today)
-        .eq('ecole_id', selectedSchoolId)
-        .maybeSingle();
-
-      if (existingPresence) {
-        await supabase
-          .from('presences')
-          .update({ statut: status })
-          .eq('id', existingPresence.id);
-      } else {
-        await supabase
-          .from('presences')
-          .insert({
-            eleve_id: studentId,
-            date: today,
-            statut: status,
-            ecole_id: selectedSchoolId
-          });
-      }
-      showToast(`Siyalman "${status}" anrejistre !`);
-      fetchAdminTeacherData();
-    } catch (err) {
-      Alert.alert("Erreur", "Echèk pandan siyalman prezans.");
+  // --- ACTIONS ENSEIGNANT DEVOIR / CAHIER DE TEXTE (MVP V0.3) ---
+  const handlePublishHomework = async () => {
+    if (!homeworkForm.description.trim()) {
+      return Alert.alert("Erreur", "Saisissez le contenu du devoir !");
     }
-  };
-
-  // --- MATERNELLE / KINDERGARTEN DAILY LIAISON ---
-  const saveKLog = async (studentId, type, val) => {
-    const today = new Date().toISOString().split('T')[0];
-    try {
-      const { data: existingK } = await supabase
-        .from('Kindergarden')
-        .select('id')
-        .eq('eleve_id', studentId)
-        .eq('date_suivi', today)
-        .eq('ecole_id', selectedSchoolId)
-        .maybeSingle();
-
-      const updatePayload = {};
-      updatePayload[type] = val;
-
-      if (existingK) {
-        await supabase
-          .from('Kindergarden')
-          .update(updatePayload)
-          .eq('id', existingK.id);
-      } else {
-        const insertPayload = {
-          eleve_id: studentId,
-          date_suivi: today,
-          repas: false,
-          sieste: false,
-          ecole_id: selectedSchoolId
-        };
-        insertPayload[type] = val;
-        await supabase.from('Kindergarden').insert(insertPayload);
-      }
-      showToast("Liaison maternelle ajou!");
-      fetchAdminTeacherData();
-    } catch (err) {
-      Alert.alert("Erreur", "Echèk pandan mizajou kaye Kindergarten.");
-    }
-  };
-
-  // --- REPORT INCIDENTS DISCIPLINE (Table: disciplines, Colonnes: eleve_id, incident, date_incident) ---
-  const addDisciplineIncident = async (studentId) => {
-    const note = disciplineNotes[studentId];
-    if (!note || !note.trim()) {
-      return Alert.alert("Erreur", "Tanpri ekri rezon an anvan.");
-    }
-
-    try {
-      const { error } = await supabase
-        .from('disciplines')
-        .insert({
-          eleve_id: studentId,
-          incident: note.trim(),
-          date_incident: new Date().toISOString().split('T')[0],
-          ecole_id: selectedSchoolId
-        });
-
-      if (error) throw error;
-      showToast("Ensidan disiplin anrejistre !");
-      setDisciplineNotes(prev => ({ ...prev, [studentId]: '' }));
-    } catch (err) {
-      Alert.alert("Erreur", "Pa kapab anrejistre ensidan sa a.");
-    }
-  };
-
-  // --- ENREGISTREMENT DES NOTES (ESPACE ENSEIGNANT AVEC STRICT CYCLE-AWARE VALIDATION) ---
-  const saveTeacherGrades = async () => {
     setLoading(true);
     try {
-      const promises = Object.keys(notesMap).map(async (studentId) => {
-        const noteValue = parseFloat(notesMap[studentId]);
-        if (isNaN(noteValue)) return;
-
-        // Validation stricte du cycle : NS4 (Secondaire) de 0 à 100, autres classes (Fondamental) de 0 à 10
-        const selectedStudentObj = studentsList.find(s => s.id === studentId);
-        const isSecondaryCycle = selectedStudentObj && selectedStudentObj.classe === 'NS4';
-        const maxLimit = isSecondaryCycle ? 100 : 10;
-
-        if (noteValue < 0 || noteValue > maxLimit) {
-          throw new Error(`Note invalide pour ${selectedStudentObj?.prenom || 'l\'élève'}. Cycle maximum: ${maxLimit}`);
-        }
-
-        // On vérifie s'il existe déjà une note
-        const { data: existingGrade } = await supabase
-          .from('notes')
-          .select('id')
-          .eq('eleve_id', studentId)
-          .eq('matiere', currentSubject)
-          .eq('periode', selectedPeriode)
-          .eq('ecole_id', selectedSchoolId)
-          .maybeSingle();
-
-        if (existingGrade) {
-          return supabase
-            .from('notes')
-            .update({ note: noteValue })
-            .eq('id', existingGrade.id);
-        } else {
-          return supabase
-            .from('notes')
-            .insert({
-              eleve_id: studentId,
-              matiere: currentSubject,
-              note: noteValue,
-              periode: selectedPeriode,
-              coefficient: 1,
-              ecole_id: selectedSchoolId
-            });
-        }
-      });
-
-      await Promise.all(promises);
-      showToast("Tout nòt yo anrejistre!");
-      setNotesMap({});
-      fetchAdminTeacherData();
-    } catch (err) {
-      Alert.alert("Erreur", err.message || "Echèk pandan anrejistreman an.");
+      const { error } = await supabase
+        .from('devoirs')
+        .insert({
+          ecole_id: selectedSchoolId,
+          matiere: homeworkForm.matiere,
+          classe: homeworkForm.classe,
+          description: homeworkForm.description,
+          date_limite: homeworkForm.date_limite || new Date().toISOString().split('T')[0]
+        });
+      if (error) throw error;
+      showToast("Cahier de texte mis à jour !");
+      setHomeworkForm(prev => ({ ...prev, description: '' }));
+    } catch (e) {
+      Alert.alert("Erreur", "Echèk pandan piblikasyon.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleMessageReply = (msgId) => {
+    const reply = messageReplyText[msgId];
+    if (!reply || !reply.trim()) return;
+
+    // Supprimer le badge 'non-lu' localement et notifier le succès
+    setTeacherMessages(prev => prev.map(m => m.id === msgId ? { ...m, unread: false } : m));
+    setMessageReplyText(prev => ({ ...prev, [msgId]: '' }));
+    showToast("Mesaj la voye byen !");
   };
 
   // --- ONBOARDING NOUVELLE ECOLE (SaaS Feature) ---
@@ -1113,7 +1016,7 @@ export default function App() {
                       </View>
                       <View style={styles.kpiBox}>
                         <Text style={styles.kpiLabel}>{t('rank')}</Text>
-                        <Text style={[styles.kpiValue, {color: '#FFCC00'}]}>{rank} / {totalClass || '...'}</Text>
+                        <Text style={[styles.kpiValue, {color: '#FFCC00'}]}>{rank} / {totalClass}</Text>
                       </View>
                    </View>
                 </Card>
@@ -1226,9 +1129,10 @@ export default function App() {
           </View>
         )}
 
-        {/* --- 3. VUE ENSEIGNANT (SAISIE DE NOTES, ATTENDANCE, INCIDENTS, MATERNELLE) --- */}
+        {/* --- 3. VUE ENSEIGNANT AVANCÉE (TACTILE APEL, NOT, KAYE TEKS & MESAJ - MVP V0.3) --- */}
         {view === 'teacher' && (
           <Card>
+            {/* Header avec indicateur école */}
             <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15}}>
               <Text style={styles.cardTitle}>{t('teacher')}</Text>
               <View style={styles.schoolSelectorHeader}>
@@ -1236,113 +1140,189 @@ export default function App() {
               </View>
             </View>
 
-            <View style={styles.filterRow}>
-              <View style={{flex: 1, marginRight: 5}}>
-                <Text style={styles.label}>{t('class_filter')}</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={{flexDirection: 'row'}}>
-                    {classesDisponibles.map(c => (
+            {/* Onglets internes de l'Espace Professeur */}
+            <Tabs
+              tabs={[
+                { id: 'apel', label: t('t_tab_apel') },
+                { id: 'not', label: t('t_tab_not') },
+                { id: 'kaye_teks', label: t('t_tab_teks') },
+                { id: 'mesaj', label: t('t_tab_mesaj') }
+              ]}
+              activeTab={teacherActiveTab}
+              onTabPress={setTeacherActiveTab}
+            />
+
+            {/* FILTRES COMMUNS MATIERES ET CLASSES */}
+            {(teacherActiveTab === 'apel' || teacherActiveTab === 'not') && (
+              <View style={{ marginVertical: 10 }}>
+                <View style={styles.filterRow}>
+                  <View style={{flex: 1, marginRight: 5}}>
+                    <Text style={styles.label}>{t('class_filter')}</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <View style={{flexDirection: 'row'}}>
+                        {classesDisponibles.map(c => (
+                          <TouchableOpacity
+                            key={c}
+                            style={[styles.smallFilterBtn, selectedClass === c && styles.smallFilterBtnActive]}
+                            onPress={() => setSelectedClass(c)}
+                          >
+                            <Text style={[styles.filterBtnText, selectedClass === c && styles.filterBtnTextActive]}>{c}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  </View>
+                </View>
+
+                {teacherActiveTab === 'not' && (
+                  <View style={{marginTop: 15}}>
+                    <Text style={styles.label}>{t('subject_filter')}</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <View style={{flexDirection: 'row'}}>
+                        {matieresDisponibles.map(m => (
+                          <TouchableOpacity
+                            key={m}
+                            style={[styles.smallFilterBtn, currentSubject === m && styles.smallFilterBtnActive]}
+                            onPress={() => setCurrentSubject(m)}
+                          >
+                            <Text style={[styles.filterBtnText, currentSubject === m && styles.filterBtnTextActive]}>{m}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* --- ONGLET APEL (Appel tactile de présence rapide < 2 min) --- */}
+            {teacherActiveTab === 'apel' && (
+              <View>
+                <Text style={styles.sectionTitle}>Lis Elèv yo pou apèl tactile :</Text>
+                {studentsList
+                  .filter(s => selectedClass === 'Toutes' || s.classe === selectedClass)
+                  .map(s => (
+                    <View key={s.id} style={styles.teacherStudentCard}>
+                      <View style={styles.row}>
+                        <Text style={styles.studentNameTeacher}>{s.prenom} {s.nom} ({s.classe})</Text>
+                      </View>
+                      <View style={styles.attendanceButtonsRow}>
+                        <TouchableOpacity onPress={() => markPresence(s.id, 'Présent')} style={[styles.statusBtn, {backgroundColor: '#06D6A0'}]}>
+                          <Text style={styles.statusBtnText}>{t('presence_p')}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => markPresence(s.id, 'Absent')} style={[styles.statusBtn, {backgroundColor: '#D90429'}]}>
+                          <Text style={styles.statusBtnText}>{t('presence_a')}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => markPresence(s.id, 'En Retard')} style={[styles.statusBtn, {backgroundColor: '#FFCC00'}]}>
+                          <Text style={[styles.statusBtnText, {color: '#0A1128'}]}>{t('presence_l')}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+              </View>
+            )}
+
+            {/* --- ONGLET NOT (Saisie de notes avec validation stricte) --- */}
+            {teacherActiveTab === 'not' && (
+              <View>
+                <Text style={styles.sectionTitle}>Saisie des Notes (Cycle-Aware) :</Text>
+                {studentsList
+                  .filter(s => selectedClass === 'Toutes' || s.classe === selectedClass)
+                  .map(s => (
+                    <View key={s.id} style={styles.teacherStudentCard}>
+                      <View style={styles.row}>
+                        <Text style={styles.studentNameTeacher}>{s.prenom} {s.nom} ({s.classe})</Text>
+                        <Input
+                          placeholder={s.classe === 'NS4' ? 'Nòt/100' : 'Nòt/10'}
+                          keyboardType="numeric"
+                          style={{ width: 80, marginVertical: 0 }}
+                          inputStyle={{ paddingVertical: 8, paddingHorizontal: 10, textAlign: 'center' }}
+                          onChangeText={(val) => {
+                            setNotesMap(prev => ({ ...prev, [s.id]: val }));
+                          }}
+                          value={notesMap[s.id] || ''}
+                        />
+                      </View>
+                    </View>
+                  ))}
+                <Button title={t('save_grades')} onPress={saveTeacherGrades} style={{ marginTop: 15 }} />
+              </View>
+            )}
+
+            {/* --- ONGLET KAYE TEKS (Cahier de texte & Devoirs) --- */}
+            {teacherActiveTab === 'kaye_teks' && (
+              <View style={{ marginTop: 10 }}>
+                <Text style={styles.sectionTitle}>{t('t_tab_teks')}</Text>
+                <Text style={styles.label}>Klas :</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 5 }}>
+                  <View style={{ flexDirection: 'row' }}>
+                    {classesDisponibles.filter(c => c !== 'Toutes').map(c => (
                       <TouchableOpacity
                         key={c}
-                        style={[styles.smallFilterBtn, selectedClass === c && styles.smallFilterBtnActive]}
-                        onPress={() => setSelectedClass(c)}
+                        style={[styles.smallFilterBtn, homeworkForm.classe === c && styles.smallFilterBtnActive]}
+                        onPress={() => setHomeworkForm(prev => ({ ...prev, classe: c }))}
                       >
-                        <Text style={[styles.filterBtnText, selectedClass === c && styles.filterBtnTextActive]}>{c}</Text>
+                        <Text style={[styles.filterBtnText, homeworkForm.classe === c && styles.filterBtnTextActive]}>{c}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
                 </ScrollView>
+
+                <Text style={styles.label} style={{ marginTop: 10 }}>Matière :</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 5 }}>
+                  <View style={{ flexDirection: 'row' }}>
+                    {matieresDisponibles.map(m => (
+                      <TouchableOpacity
+                        key={m}
+                        style={[styles.smallFilterBtn, homeworkForm.matiere === m && styles.smallFilterBtnActive]}
+                        onPress={() => setHomeworkForm(prev => ({ ...prev, matiere: m }))}
+                      >
+                        <Text style={[styles.filterBtnText, homeworkForm.matiere === m && styles.filterBtnTextActive]}>{m}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+
+                <Input
+                  placeholder={t('hw_desc')}
+                  value={homeworkForm.description}
+                  onChangeText={(text) => setHomeworkForm(prev => ({ ...prev, description: text }))}
+                  style={{ marginTop: 15 }}
+                />
+                <Button title={t('hw_submit')} onPress={handlePublishHomework} style={{ marginTop: 15 }} />
               </View>
-            </View>
+            )}
 
-            <View style={{marginTop: 15, marginBottom: 15}}>
-              <Text style={styles.label}>{t('subject_filter')}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={{flexDirection: 'row'}}>
-                  {matieresDisponibles.map(m => (
-                    <TouchableOpacity
-                      key={m}
-                      style={[styles.smallFilterBtn, currentSubject === m && styles.smallFilterBtnActive]}
-                      onPress={() => setCurrentSubject(m)}
-                    >
-                      <Text style={[styles.filterBtnText, currentSubject === m && styles.filterBtnTextActive]}>{m}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-
-            {/* Liste de saisie */}
-            <Text style={styles.sectionTitle}>Saisie des Notes & Actions :</Text>
-            {studentsList
-              .filter(s => selectedClass === 'Toutes' || s.classe === selectedClass)
-              .map(s => (
-                <View key={s.id} style={styles.teacherStudentCard}>
-                  <View style={styles.row}>
-                    <Text style={styles.studentNameTeacher}>{s.prenom} {s.nom} ({s.classe})</Text>
-                    <Input
-                      placeholder={s.classe === 'NS4' ? 'Nòt/100' : 'Nòt/10'}
-                      keyboardType="numeric"
-                      style={{ width: 80, marginVertical: 0 }}
-                      inputStyle={{ paddingVertical: 8, paddingHorizontal: 10, textAlign: 'center' }}
-                      onChangeText={(val) => {
-                        setNotesMap(prev => ({ ...prev, [s.id]: val }));
-                      }}
-                      value={notesMap[s.id] || ''}
-                    />
-                  </View>
-
-                  {/* Boutons d'émargement de présence (Attendance) */}
-                  <View style={styles.subSectionContainer}>
-                    <Text style={styles.subSectionTitle}>{t('attendance_sec')}</Text>
-                    <View style={styles.attendanceButtonsRow}>
-                      <TouchableOpacity onPress={() => markPresence(s.id, 'Présent')} style={[styles.statusBtn, {backgroundColor: '#06D6A0'}]}>
-                        <Text style={styles.statusBtnText}>{t('presence_p')}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => markPresence(s.id, 'Absent')} style={[styles.statusBtn, {backgroundColor: '#D90429'}]}>
-                        <Text style={styles.statusBtnText}>{t('presence_a')}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => markPresence(s.id, 'En Retard')} style={[styles.statusBtn, {backgroundColor: '#FFCC00'}]}>
-                        <Text style={[styles.statusBtnText, {color: '#0A1128'}]}>{t('presence_l')}</Text>
-                      </TouchableOpacity>
+            {/* --- ONGLET MESAJ (Boîte de messages parents avec réponse rapide) --- */}
+            {teacherActiveTab === 'mesaj' && (
+              <View style={{ marginTop: 10 }}>
+                <Text style={styles.sectionTitle}>{t('t_tab_mesaj')}</Text>
+                {teacherMessages.map(msg => (
+                  <View key={msg.id} style={styles.teacherStudentCard}>
+                    <View style={styles.row}>
+                      <Text style={{color: '#FFCC00', fontWeight: 'bold'}}>{msg.parent}</Text>
+                      <Text style={{color: '#8DA9C4', fontSize: 11}}>{msg.date}</Text>
                     </View>
-                  </View>
+                    <Text style={{color: '#FFF', fontSize: 13, marginVertical: 6}}>{msg.message}</Text>
 
-                  {/* Suivi Kindergarten exclusif */}
-                  {s.classe === 'Kindergarten' && (
-                    <View style={styles.subSectionContainer}>
-                      <Text style={styles.subSectionTitle}>{t('liaison_sec')}</Text>
-                      <View style={styles.attendanceButtonsRow}>
-                        <TouchableOpacity onPress={() => saveKLog(s.id, 'repas', true)} style={[styles.statusBtn, {backgroundColor: '#1C2541'}]}>
-                          <Text style={styles.statusBtnText}>🥣 Repas OUI</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => saveKLog(s.id, 'sieste', true)} style={[styles.statusBtn, {backgroundColor: '#1C2541'}]}>
-                          <Text style={styles.statusBtnText}>😴 Sieste OUI</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
+                    {msg.unread && <Badge label="Nouvo" variant="danger" style={{ marginBottom: 5 }} />}
 
-                  {/* Formulaire de signalement de discipline */}
-                  <View style={styles.subSectionContainer}>
-                    <Text style={styles.subSectionTitle}>{t('discipline_sec')}</Text>
                     <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 5}}>
                       <Input
-                        placeholder="Texte de l'incident..."
-                        value={disciplineNotes[s.id] || ''}
-                        onChangeText={(text) => setDisciplineNotes(prev => ({...prev, [s.id]: text}))}
+                        placeholder="Reponn paran an..."
+                        value={messageReplyText[msg.id] || ''}
+                        onChangeText={(text) => setMessageReplyText(prev => ({ ...prev, [msg.id]: text }))}
                         style={{ flex: 1, marginVertical: 0 }}
                         inputStyle={{ paddingVertical: 8 }}
                       />
-                      <TouchableOpacity style={styles.disciplineBtn} onPress={() => addDisciplineIncident(s.id)}>
-                        <Text style={styles.disciplineBtnText}>🚨</Text>
+                      <TouchableOpacity style={styles.disciplineBtn} onPress={() => handleMessageReply(msg.id)}>
+                        <Text style={{fontSize: 12, fontWeight: 'bold', color: '#0A1128'}}>Voye</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
-                </View>
-              ))}
-
-            <Button title={t('save_grades')} onPress={saveTeacherGrades} style={{ marginTop: 15 }} />
+                ))}
+              </View>
+            )}
           </Card>
         )}
 

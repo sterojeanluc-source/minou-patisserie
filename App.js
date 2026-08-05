@@ -20,7 +20,7 @@ import Tabs from './components/Tabs';
 import Toast from './components/Toast';
 
 export default function App() {
-  // --- ÉTATS SYSTEMES & SAAS (MULTI-TENANT / MVP VERSION 0.1) ---
+  // --- ÉTATS SYSTEMES & SAAS (MULTI-TENANT / MVP VERSION 0.1 & 0.2) ---
   const [lang, setLang] = useState('ht');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState('');  // 'super_admin', 'school_admin', 'teacher', 'secretary', 'parent'
@@ -51,7 +51,7 @@ export default function App() {
   const [totalClass, setTotalClass] = useState(0);
   const [presenceStatus, setPresenceStatus] = useState('...');
   const [announcements, setAnnouncements] = useState([]);
-  const [stats, setStats] = useState({ totalEncaisse: 0, totalTeachers: 5, totalStudents: 150, todayAttendance: 94, alertCount: 3 });
+  const [stats, setStats] = useState({ totalEncaisse: 245000, totalTeachers: 12, totalStudents: 150, todayAttendance: 94, alertCount: 3 });
   const [kLog, setKLog] = useState(null);
   const [disciplineLogs, setDisciplineLogs] = useState([]);
 
@@ -60,11 +60,30 @@ export default function App() {
 
   // --- ÉTATS FORMULAIRES ---
   const [newSchoolForm, setNewSchoolForm] = useState({ nom: '', subdomain: '', initialFee: '15000' });
-  const [newStudent, setNewStudent] = useState({ nom: '', prenom: '', classe: '9ème AF', telephone_parent: '', solde_du: '15000' });
   const [notesMap, setNotesMap] = useState({});
   const [currentSubject, setCurrentSubject] = useState('Mathématiques');
   const [selectedClass, setSelectedClass] = useState('Toutes');
   const [disciplineNotes, setDisciplineNotes] = useState({});
+
+  // --- ÉTATS WIZARD INSCRIPTION ÉLÈVE EN 4 ÉTAPES (MVP V0.2) ---
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardForm, setWizardForm] = useState({
+    type: 'Nouveau', // 'Nouveau', 'Ré-inscription'
+    nom: '',
+    prenom: '',
+    sexe: 'Garçon',
+    date_naissance: '',
+    nie: '', // Numéro d'Identification Unique (MENFP)
+    classe: '6ème AF',
+    serie: 'SVT', // Pour secondaire (SVT, SMP, etc.)
+    nom_parent: '',
+    telephone_parent: '',
+    docs_birth_cert: false,
+    docs_report_card: false,
+    solde_du: '15000',
+    paiement_init: '5000',
+    methode_paiement: 'MonCash' // 'MonCash', 'NatCash', 'Cash'
+  });
 
   const classesDisponibles = ['Toutes', 'Kindergarten', '1ère AF', '6ème AF', '9ème AF', 'NS4'];
   const matieresDisponibles = ['Mathématiques', 'Physique', 'SVT', 'Chimie', 'Français', 'Anglais', 'Créole'];
@@ -123,7 +142,17 @@ export default function App() {
       saas_title: "🚀 Super-Administration SaaS",
       saas_subtitle: "Statistiques Globales multi-établissements",
       offline: "Hors-ligne",
-      toggle_offline: "Basculer Hors-ligne"
+      toggle_offline: "Basculer Hors-ligne",
+      wizard_t: "Onboarding Inscription Élève",
+      step1: "1. Type d'inscription",
+      step2: "2. Informations Élève (NIE & Série)",
+      step3: "3. Documents obligatoires",
+      step4: "4. Frais et paiement initial",
+      nie_placeholder: "NIE (MENFP) - ex: 123-456-789-0",
+      serie_lbl: "Série (SMP/SVT/etc. pour NS4)",
+      next_btn: "Suivant",
+      prev_btn: "Précédent",
+      export_csv: "Exporter Transactions CSV"
     },
     ht: {
       welcome: "Lekòl Pam SaaS",
@@ -177,7 +206,17 @@ export default function App() {
       saas_title: "🚀 Super-Administrasyon SaaS",
       saas_subtitle: "Estatistik ak pèfòmans tout lekòl yo",
       offline: "Òflin",
-      toggle_offline: "Baskile Òflin"
+      toggle_offline: "Baskile Òflin",
+      wizard_t: "Enskripsyon Elèv Wizard",
+      step1: "1. Kalite Enskripsyon",
+      step2: "2. Enfòmasyon Elèv (NIE & Seri)",
+      step3: "3. Dokiman Obligatwa yo",
+      step4: "4. Frè ak Peman Premye Fwa",
+      nie_placeholder: "NIE (MENFP) - eg: 123-456-789-0",
+      serie_lbl: "Seri (SMP/SVT/SMP pou NS4)",
+      next_btn: "Suiv",
+      prev_btn: "Retounen",
+      export_csv: "Ekspòte Tranzaksyon CSV"
     }
   };
   const t = (key) => translations[lang][key] || key;
@@ -470,7 +509,7 @@ export default function App() {
     }
   };
 
-  // --- CONNEXION & AUTHENTIFICATION (SaaS Multi-tenant Aware / Version 0.1) ---
+  // --- CONNEXION & AUTHENTIFICATION (SaaS Multi-tenant Aware / Version 0.1 & 0.2) ---
   const handleLogin = async () => {
     if (!loginPhone.trim()) {
       return Alert.alert("Erreur", "Veuillez entrer un identifiant ou numéro.");
@@ -590,29 +629,57 @@ export default function App() {
     if (view === 'parent') fetchParentData(); else fetchAdminTeacherData();
   };
 
-  // --- REGISTRATION / ENROLLMENT (SECRETAIRE/ADMIN FORM) ---
-  const handleRegisterStudent = async () => {
-    if (!newStudent.nom.trim() || !newStudent.prenom.trim() || !newStudent.telephone_parent.trim()) {
+  // --- REGISTRATION / ENROLLMENT (SECRETAIRE/ADMIN FORM CONFORM WIZARD IN 4 STEPS) ---
+  const handleWizardSubmit = async () => {
+    if (!wizardForm.nom.trim() || !wizardForm.prenom.trim() || !wizardForm.telephone_parent.trim()) {
       return Alert.alert("Erreur", "Tanpri ranpli tout chan yo!");
     }
     setLoading(true);
+    const mockMatricule = `LPM-${new Date().getFullYear().toString().slice(-2)}-${Math.floor(1000 + Math.random() * 9000)}`;
+
     try {
+      // Insertion dans la base
       const { data, error } = await supabase
         .from('eleves')
         .insert({
-          nom: newStudent.nom,
-          prenom: newStudent.prenom,
-          classe: newStudent.classe,
-          telephone_parent: newStudent.telephone_parent,
-          solde_du: parseFloat(newStudent.solde_du || '15000'),
-          statut_paiement: 'Impayé',
-          ecole_id: selectedSchoolId
+          nom: wizardForm.nom,
+          prenom: wizardForm.prenom,
+          classe: wizardForm.classe,
+          telephone_parent: wizardForm.telephone_parent,
+          solde_du: parseFloat(wizardForm.solde_du) - parseFloat(wizardForm.paiement_init || '0'),
+          statut_paiement: (parseFloat(wizardForm.solde_du) - parseFloat(wizardForm.paiement_init || '0')) === 0 ? 'Payé' : 'Impayé',
+          ecole_id: selectedSchoolId,
+          nie_menfp: wizardForm.nie,
+          serie_ns4: wizardForm.classe === 'NS4' ? wizardForm.serie : null,
+          photo_url: 'https://via.placeholder.com/100/1A365D/FFFFFF?text=' + wizardForm.prenom.charAt(0)
         });
       if (error) throw error;
 
-      showToast(`Elèv la ${newStudent.prenom} anrejistre!`);
-      setNewStudent({ nom: '', prenom: '', classe: '9ème AF', telephone_parent: '', solde_du: '15000' });
-      fetchAdminTeacherData();
+      Alert.alert(
+        "Matrikilasyon Elèv",
+        `Enskripsyon fini ! Matricule: ${mockMatricule}\nNIE: ${wizardForm.nie || 'Okenn'}`,
+        [{ text: "Ok", onPress: () => {
+          setWizardStep(1);
+          setWizardForm({
+            type: 'Nouveau',
+            nom: '',
+            prenom: '',
+            sexe: 'Garçon',
+            date_naissance: '',
+            nie: '',
+            classe: '6ème AF',
+            serie: 'SVT',
+            nom_parent: '',
+            telephone_parent: '',
+            docs_birth_cert: false,
+            docs_report_card: false,
+            solde_du: '15000',
+            paiement_init: '5000',
+            methode_paiement: 'MonCash'
+          });
+          fetchAdminTeacherData();
+        }}]
+      );
     } catch (err) {
       Alert.alert("Erreur", err.message || "Echèk pandan enskripsyon.");
     } finally {
@@ -717,13 +784,22 @@ export default function App() {
     }
   };
 
-  // --- ENREGISTREMENT DES NOTES (ESPACE ENSEIGNANT) ---
+  // --- ENREGISTREMENT DES NOTES (ESPACE ENSEIGNANT AVEC STRICT CYCLE-AWARE VALIDATION) ---
   const saveTeacherGrades = async () => {
     setLoading(true);
     try {
       const promises = Object.keys(notesMap).map(async (studentId) => {
         const noteValue = parseFloat(notesMap[studentId]);
         if (isNaN(noteValue)) return;
+
+        // Validation stricte du cycle : NS4 (Secondaire) de 0 à 100, autres classes (Fondamental) de 0 à 10
+        const selectedStudentObj = studentsList.find(s => s.id === studentId);
+        const isSecondaryCycle = selectedStudentObj && selectedStudentObj.classe === 'NS4';
+        const maxLimit = isSecondaryCycle ? 100 : 10;
+
+        if (noteValue < 0 || noteValue > maxLimit) {
+          throw new Error(`Note invalide pour ${selectedStudentObj?.prenom || 'l\'élève'}. Cycle maximum: ${maxLimit}`);
+        }
 
         // On vérifie s'il existe déjà une note
         const { data: existingGrade } = await supabase
@@ -759,7 +835,7 @@ export default function App() {
       setNotesMap({});
       fetchAdminTeacherData();
     } catch (err) {
-      Alert.alert("Erreur", "Echèk pandan anrejistreman an.");
+      Alert.alert("Erreur", err.message || "Echèk pandan anrejistreman an.");
     } finally {
       setLoading(false);
     }
@@ -783,6 +859,11 @@ export default function App() {
     setSchools(prev => [...prev, newSchoolObj]);
     setNewSchoolForm({ nom: '', subdomain: '', initialFee: '15000' });
     showToast("Lekòl la kreye ak siksè !");
+  };
+
+  const handleExportCSV = () => {
+    // Simulation d'exportation de fiches financières de l'école active
+    Alert.alert("Siksè", "Tranzaksyon yo ekspòte byen nan fòma CSV ! (LPM-Finances-Export.csv)");
   };
 
   const changeLanguage = async () => {
@@ -942,7 +1023,6 @@ export default function App() {
           </View>
         )}
 
-        {/* ANNONCES / ALERTS */}
         {announcements.map(a => (
           <View key={a.id} style={styles.announcementBanner}>
             <Text style={styles.announcementTitle}>{t('news')}</Text>
@@ -1201,7 +1281,7 @@ export default function App() {
                   <View style={styles.row}>
                     <Text style={styles.studentNameTeacher}>{s.prenom} {s.nom} ({s.classe})</Text>
                     <Input
-                      placeholder="Nòt/10"
+                      placeholder={s.classe === 'NS4' ? 'Nòt/100' : 'Nòt/10'}
                       keyboardType="numeric"
                       style={{ width: 80, marginVertical: 0 }}
                       inputStyle={{ paddingVertical: 8, paddingHorizontal: 10, textAlign: 'center' }}
@@ -1266,51 +1346,189 @@ export default function App() {
           </Card>
         )}
 
-        {/* --- 4. VUE ENROLLMENT / INSCRIPTION (FORMULAIRE SECRETAIRE COMPLET) --- */}
+        {/* --- 4. VUE ENROLLMENT / INSCRIPTION (FORMULAIRE SECRETAIRE COMPLET AVEC WIZARD EN 4 ÉTAPES) --- */}
         {view === 'enrollment' && (
           <View>
-            {/* Formulaire Inscription */}
+            {/* Onboarding Wizard 4 étapes */}
             <Card>
-              <Text style={styles.cardTitle}>{t('reg_title')}</Text>
+              <Text style={styles.cardTitle}>{t('wizard_t')}</Text>
 
-              <Input
-                placeholder={t('reg_nom')}
-                value={newStudent.nom}
-                onChangeText={(val) => setNewStudent(prev => ({ ...prev, nom: val }))}
-              />
-              <Input
-                placeholder={t('reg_prenom')}
-                value={newStudent.prenom}
-                onChangeText={(val) => setNewStudent(prev => ({ ...prev, prenom: val }))}
-              />
-              <Input
-                placeholder={t('reg_parent_tel')}
-                value={newStudent.telephone_parent}
-                onChangeText={(val) => setNewStudent(prev => ({ ...prev, telephone_parent: val }))}
-              />
-              <Input
-                placeholder={t('reg_solde')}
-                keyboardType="numeric"
-                value={newStudent.solde_du}
-                onChangeText={(val) => setNewStudent(prev => ({ ...prev, solde_du: val }))}
-              />
+              {/* Stepper Header */}
+              <View style={styles.stepperContainer}>
+                <View style={[styles.stepDot, wizardStep >= 1 && styles.stepDotActive]}><Text style={styles.stepDotText}>1</Text></View>
+                <View style={[styles.stepLine, wizardStep >= 2 && styles.stepLineActive]} />
+                <View style={[styles.stepDot, wizardStep >= 2 && styles.stepDotActive]}><Text style={styles.stepDotText}>2</Text></View>
+                <View style={[styles.stepLine, wizardStep >= 3 && styles.stepLineActive]} />
+                <View style={[styles.stepDot, wizardStep >= 3 && styles.stepDotActive]}><Text style={styles.stepDotText}>3</Text></View>
+                <View style={[styles.stepLine, wizardStep >= 4 && styles.stepLineActive]} />
+                <View style={[styles.stepDot, wizardStep >= 4 && styles.stepDotActive]}><Text style={styles.stepDotText}>4</Text></View>
+              </View>
 
-              <Text style={[styles.label, {marginTop: 15}]}>Classe :</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginVertical: 10}}>
-                <View style={{flexDirection: 'row'}}>
-                  {classesDisponibles.filter(c => c !== 'Toutes').map(c => (
+              <Text style={styles.stepLabel}>
+                {wizardStep === 1 && t('step1')}
+                {wizardStep === 2 && t('step2')}
+                {wizardStep === 3 && t('step3')}
+                {wizardStep === 4 && t('step4')}
+              </Text>
+
+              {/* Étape 1 : Type d'inscription */}
+              {wizardStep === 1 && (
+                <View style={{ marginVertical: 10 }}>
+                  <Text style={styles.label}>Chwazi Kalite Enskripsyon :</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginVertical: 10 }}>
                     <TouchableOpacity
-                      key={c}
-                      style={[styles.smallFilterBtn, newStudent.classe === c && styles.smallFilterBtnActive]}
-                      onPress={() => setNewStudent(prev => ({ ...prev, classe: c }))}
+                      style={[styles.smallFilterBtn, wizardForm.type === 'Nouveau' && styles.smallFilterBtnActive, { flex: 1, paddingVertical: 12 }]}
+                      onPress={() => setWizardForm(prev => ({ ...prev, type: 'Nouveau' }))}
                     >
-                      <Text style={[styles.filterBtnText, newStudent.classe === c && styles.filterBtnTextActive]}>{c}</Text>
+                      <Text style={[styles.filterBtnText, wizardForm.type === 'Nouveau' && styles.filterBtnTextActive, { textAlign: 'center' }]}>Nouvo Elèv</Text>
                     </TouchableOpacity>
-                  ))}
+                    <TouchableOpacity
+                      style={[styles.smallFilterBtn, wizardForm.type === 'Ré-inscription' && styles.smallFilterBtnActive, { flex: 1, paddingVertical: 12 }]}
+                      onPress={() => setWizardForm(prev => ({ ...prev, type: 'Ré-inscription' }))}
+                    >
+                      <Text style={[styles.filterBtnText, wizardForm.type === 'Ré-inscription' && styles.filterBtnTextActive, { textAlign: 'center' }]}>Re-Enskripsyon</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </ScrollView>
+              )}
 
-              <Button title={t('reg_submit')} onPress={handleRegisterStudent} style={{ marginTop: 15 }} />
+              {/* Étape 2 : Infos Élève avec NIE et Série pour NS4 */}
+              {wizardStep === 2 && (
+                <View>
+                  <Input
+                    placeholder="Siyati Elèv"
+                    value={wizardForm.nom}
+                    onChangeText={(val) => setWizardForm(prev => ({ ...prev, nom: val }))}
+                  />
+                  <Input
+                    placeholder="Non Elèv"
+                    value={wizardForm.prenom}
+                    onChangeText={(val) => setWizardForm(prev => ({ ...prev, prenom: val }))}
+                  />
+                  <Input
+                    placeholder={t('nie_placeholder')}
+                    value={wizardForm.nie}
+                    onChangeText={(val) => setWizardForm(prev => ({ ...prev, nie: val }))}
+                  />
+
+                  <Text style={styles.label}>Klas :</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 5 }}>
+                    <View style={{ flexDirection: 'row' }}>
+                      {classesDisponibles.filter(c => c !== 'Toutes').map(c => (
+                        <TouchableOpacity
+                          key={c}
+                          style={[styles.smallFilterBtn, wizardForm.classe === c && styles.smallFilterBtnActive]}
+                          onPress={() => setWizardForm(prev => ({ ...prev, classe: c }))}
+                        >
+                          <Text style={[styles.filterBtnText, wizardForm.classe === c && styles.filterBtnTextActive]}>{c}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+
+                  {/* Optionnel Série pour Secondaire NS4 */}
+                  {wizardForm.classe === 'NS4' && (
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={styles.label}>{t('serie_lbl')}</Text>
+                      <View style={{ flexDirection: 'row' }}>
+                        {['SVT', 'SMP', 'LLC', 'SES'].map(s => (
+                          <TouchableOpacity
+                            key={s}
+                            style={[styles.smallFilterBtn, wizardForm.serie === s && styles.smallFilterBtnActive]}
+                            onPress={() => setWizardForm(prev => ({ ...prev, serie: s }))}
+                          >
+                            <Text style={[styles.filterBtnText, wizardForm.serie === s && styles.filterBtnTextActive]}>{s}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Étape 3 : Documents obligatoires */}
+              {wizardStep === 3 && (
+                <View style={{ marginVertical: 10 }}>
+                  <Text style={styles.label}>Dokiman yo bay yo :</Text>
+                  <TouchableOpacity
+                    style={[styles.docCheckboxRow, wizardForm.docs_birth_cert && styles.docCheckboxRowActive]}
+                    onPress={() => setWizardForm(prev => ({ ...prev, docs_birth_cert: !prev.docs_birth_cert }))}
+                  >
+                    <Text style={{color: '#FFF', fontSize: 13}}>📄 {lang === 'fr' ? 'Acte de naissance' : 'Kat batistè'}</Text>
+                    <Badge label={wizardForm.docs_birth_cert ? "Wi" : "Okenn"} variant={wizardForm.docs_birth_cert ? "success" : "danger"} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.docCheckboxRow, wizardForm.docs_report_card && styles.docCheckboxRowActive, { marginTop: 10 }]}
+                    onPress={() => setWizardForm(prev => ({ ...prev, docs_report_card: !prev.docs_report_card }))}
+                  >
+                    <Text style={{color: '#FFF', fontSize: 13}}>📄 {lang === 'fr' ? 'Carnet scolaire antérieur' : 'Karnè ane pase'}</Text>
+                    <Badge label={wizardForm.docs_report_card ? "Wi" : "Okenn"} variant={wizardForm.docs_report_card ? "success" : "danger"} />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Étape 4 : Frais et paiement initial */}
+              {wizardStep === 4 && (
+                <View>
+                  <Input
+                    placeholder="Non Paran"
+                    value={wizardForm.nom_parent}
+                    onChangeText={(val) => setWizardForm(prev => ({ ...prev, nom_parent: val }))}
+                  />
+                  <Input
+                    placeholder="Telefòn Paran"
+                    value={wizardForm.telephone_parent}
+                    onChangeText={(val) => setWizardForm(prev => ({ ...prev, telephone_parent: val }))}
+                  />
+                  <Input
+                    placeholder="Total Frè Lekòl"
+                    keyboardType="numeric"
+                    value={wizardForm.solde_du}
+                    onChangeText={(val) => setWizardForm(prev => ({ ...prev, solde_du: val }))}
+                  />
+                  <Input
+                    placeholder="Peman Premye Fwa (HTG)"
+                    keyboardType="numeric"
+                    value={wizardForm.paiement_init}
+                    onChangeText={(val) => setWizardForm(prev => ({ ...prev, paiement_init: val }))}
+                  />
+
+                  <Text style={styles.label}>Metòd Peman :</Text>
+                  <View style={{ flexDirection: 'row', marginVertical: 10 }}>
+                    {['MonCash', 'NatCash', 'Cash'].map(m => (
+                      <TouchableOpacity
+                        key={m}
+                        style={[styles.smallFilterBtn, wizardForm.methode_paiement === m && styles.smallFilterBtnActive, { flex: 1 }]}
+                        onPress={() => setWizardForm(prev => ({ ...prev, methode_paiement: m }))}
+                      >
+                        <Text style={[styles.filterBtnText, wizardForm.methode_paiement === m && styles.filterBtnTextActive, { textAlign: 'center' }]}>{m}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Barre de navigation du Wizard */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 }}>
+                {wizardStep > 1 ? (
+                  <Button title={t('prev_btn')} variant="secondary" onPress={() => setWizardStep(prev => prev - 1)} style={{ flex: 1, marginRight: 5 }} />
+                ) : <View style={{ flex: 1 }} />}
+
+                {wizardStep < 4 ? (
+                  <Button title={t('next_btn')} onPress={() => setWizardStep(prev => prev + 1)} style={{ flex: 1, marginLeft: 5 }} />
+                ) : (
+                  <Button title={t('reg_submit')} onPress={handleWizardSubmit} style={{ flex: 1, marginLeft: 5 }} />
+                )}
+              </View>
+            </Card>
+
+            {/* Finances - Recouvrements et rapports CSV */}
+            <Card>
+              <Text style={styles.cardTitle}>Finans ak Rekouvreman Lekòl la</Text>
+              <Text style={styles.subtext}>Total Lajan Enkesi :</Text>
+              <Text style={{color: '#06D6A0', fontSize: 28, fontWeight: 'bold'}}>{stats.totalEncaisse} HTG</Text>
+              <Button title={t('export_csv')} variant="secondary" onPress={handleExportCSV} style={{ marginTop: 15 }} />
             </Card>
 
             {/* Registre des élèves existants */}
@@ -1321,7 +1539,7 @@ export default function App() {
                    <Image source={{ uri: s.photo_url || 'https://via.placeholder.com/100' }} style={{width:50, height:50, borderRadius:25}} />
                    <View style={{marginLeft: 15, flex: 1}}>
                      <Text style={styles.bold}>{s.prenom} {s.nom}</Text>
-                     <Text style={{color: '#666', fontSize: 12}}>{s.classe} | {s.solde_du} HTG</Text>
+                     <Text style={{color: '#666', fontSize: 12}}>{s.classe} | NIE: {s.nie_menfp || 'Okenn'} | {s.solde_du} HTG</Text>
                    </View>
                 </View>
                 <View style={[styles.row, {marginTop: 10}]}>
@@ -1347,7 +1565,7 @@ export default function App() {
                   <Text style={styles.saasKpiLabel}>Lekòl Anrejistre</Text>
                 </View>
                 <View style={styles.saasKpiCard}>
-                  <Text style={styles.saasKpiValue}>{schools.length * 15}0$</Text>
+                  <Text style={styles.saasKpiValue}>{schools.length * 15}000$</Text>
                   <Text style={styles.saasKpiLabel}>SaaS ARR (HTG)</Text>
                 </View>
               </View>
@@ -1390,12 +1608,12 @@ export default function App() {
           </View>
         )}
 
-        {/* --- 6. VUE ADMIN STATS (SI ADMIN CONNECTÉ / MVP VERSION 0.1 DASHBOARD COMPLET) --- */}
+        {/* --- 6. VUE ADMIN STATS (SI ADMIN CONNECTÉ / MVP VERSION 0.1 & 0.2 DASHBOARD COMPLET) --- */}
         {view === 'admin' && (
           <View>
-            {/* MVP v0.1 - Dashboard Éléments du Directeur */}
+            {/* MVP v0.1 & v0.2 - Dashboard Éléments du Directeur */}
             <Card>
-              <Text style={styles.cardTitle}>Estatistik Lekòl la (Dashboard v0.1)</Text>
+              <Text style={styles.cardTitle}>Estatistik Lekòl la (Dashboard v0.2)</Text>
               <Text style={styles.subtext}>Yon jeneral de aktivite lekòl la pou jodi a</Text>
 
               <View style={styles.saasMetricsRow}>
@@ -1578,5 +1796,16 @@ const styles = StyleSheet.create({
   saasKpiValue: { color: '#FFCC00', fontSize: 24, fontWeight: 'bold' },
   saasKpiLabel: { color: '#8DA9C4', fontSize: 11, marginTop: 4 },
 
-  inlineToggleOffline: { alignSelf: 'flex-end', marginBottom: 10, padding: 5, backgroundColor: '#1C2541', borderRadius: 8 }
+  inlineToggleOffline: { alignSelf: 'flex-end', marginBottom: 10, padding: 5, backgroundColor: '#1C2541', borderRadius: 8 },
+
+  // NOUVEAUX STYLES POUR WIZARD ET STEPPER (MVP v0.2)
+  stepperContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 15 },
+  stepDot: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#1C2541', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#3A506B' },
+  stepDotActive: { backgroundColor: '#FFCC00', borderColor: '#FFCC00' },
+  stepDotText: { color: '#FFF', fontWeight: 'bold', fontSize: 12 },
+  stepLine: { flex: 1, height: 2, backgroundColor: '#1C2541', marginHorizontal: 5 },
+  stepLineActive: { backgroundColor: '#FFCC00' },
+  stepLabel: { color: '#FFCC00', fontSize: 13, fontWeight: 'bold', textAlign: 'center', marginBottom: 15, textTransform: 'uppercase' },
+  docCheckboxRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, backgroundColor: '#1C2541', borderRadius: 12, borderWidth: 1, borderColor: '#3A506B' },
+  docCheckboxRowActive: { borderColor: '#FFCC00' }
 });

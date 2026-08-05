@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, Image, TouchableOpacity,
-  ScrollView, SafeAreaView, StatusBar, ActivityIndicator, Alert, TextInput
+  ScrollView, SafeAreaView, StatusBar, Alert, TextInput
 } from 'react-native';
 import { supabase } from './supabaseClient';
 import * as Print from 'expo-print';
@@ -30,6 +30,9 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
+
+  // --- ÉTATS PROTOTYPE (ONLINE/OFFLINE & ÉLÈVES STATS) ---
+  const [isOnline, setIsOnline] = useState(true);
 
   // --- ÉTATS SAAS (ÉCOLES / TENANTS) ---
   const [selectedSchoolId, setSelectedSchoolId] = useState('');
@@ -118,7 +121,9 @@ export default function App() {
       school_submit: "Créer l'Espace École",
       switch_school: "Changer d'École Active :",
       saas_title: "🚀 Super-Administration SaaS",
-      saas_subtitle: "Statistiques Globales multi-établissements"
+      saas_subtitle: "Statistiques Globales multi-établissements",
+      offline: "Hors-ligne",
+      toggle_offline: "Basculer Hors-ligne"
     },
     ht: {
       welcome: "Lekòl Pam SaaS",
@@ -170,14 +175,16 @@ export default function App() {
       school_submit: "Kreye Espas Lekòl la",
       switch_school: "Chwazi Lekòl pou w jere :",
       saas_title: "🚀 Super-Administrasyon SaaS",
-      saas_subtitle: "Estatistik ak pèfòmans tout lekòl yo"
+      saas_subtitle: "Estatistik ak pèfòmans tout lekòl yo",
+      offline: "Òflin",
+      toggle_offline: "Baskile Òflin"
     }
   };
   const t = (key) => translations[lang][key] || key;
 
   // --- AUTOMATIC LOADING & SYNCING ---
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && isOnline) {
       fetchAnnouncements();
       if (view === 'parent' && student?.id) {
         fetchParentData();
@@ -185,7 +192,7 @@ export default function App() {
         fetchAdminTeacherData();
       }
     }
-  }, [view, isLoggedIn, student?.id, selectedPeriode, selectedSchoolId]);
+  }, [view, isLoggedIn, student?.id, selectedPeriode, selectedSchoolId, isOnline]);
 
   // Restauration automatique de session depuis AsyncStorage au démarrage
   useEffect(() => {
@@ -243,6 +250,7 @@ export default function App() {
   };
 
   const fetchAnnouncements = async () => {
+    if (!isOnline) return;
     const { data } = await supabase
       .from('annonces')
       .select('*')
@@ -262,6 +270,16 @@ export default function App() {
 
   const fetchParentData = async () => {
     if (!student?.id) return;
+    if (!isOnline) {
+      // Charger depuis le cache offline
+      try {
+        const cachedGrades = await AsyncStorage.getItem(`cached_grades_${student.id}`);
+        if (cachedGrades) setGrades(JSON.parse(cachedGrades));
+      } catch (e) {
+        console.warn("Erreur cache offline", e);
+      }
+      return;
+    }
     setLoading(true);
 
     try {
@@ -286,6 +304,7 @@ export default function App() {
 
       if (gData) {
         setGrades(gData);
+        await AsyncStorage.setItem(`cached_grades_${student.id}`, JSON.stringify(gData));
 
         let totalPoints = 0;
         let totalCoefficients = 0;
@@ -385,6 +404,7 @@ export default function App() {
   };
 
   const fetchAdminTeacherData = async () => {
+    if (!isOnline) return;
     setLoading(true);
     try {
       const { data } = await supabase
@@ -410,6 +430,10 @@ export default function App() {
 
   // Manuel Sync Trigger
   const handleManualSync = async () => {
+    if (!isOnline) {
+      Alert.alert("Òflin", "Ou pa ka senkronize lè ou òflin !");
+      return;
+    }
     setIsSyncing(true);
     if (view === 'parent' && student) {
       await fetchParentData();
@@ -490,6 +514,20 @@ export default function App() {
         setView('enrollment');
         setSelectedSchoolId(effectiveSchoolId);
       } else {
+        // Parent mock profile fallback or Supabase query
+        if (!isOnline) {
+          // Offlin Parent login bypass simulation
+          setIsLoggedIn(true);
+          setUserRole('parent');
+          setView('parent');
+          const mockOffStudent = { id: 's_offline_01', nom: 'Saint-Preux', prenom: 'Junior', classe: '9ème AF', solde_du: 15000, ecole_id: effectiveSchoolId };
+          setStudent(mockOffStudent);
+          setStudentsList([mockOffStudent]);
+          setGrades([]);
+          setLoading(false);
+          return;
+        }
+
         const { data } = await supabase
           .from('eleves')
           .select('*')
@@ -782,11 +820,24 @@ export default function App() {
     await Sharing.shareAsync(uri);
   };
 
+  const toggleOfflineMode = () => {
+    const nextOnlineState = !isOnline;
+    setIsOnline(nextOnlineState);
+    showToast(nextOnlineState ? "Ou anliy kounye a !" : "Mòd òflin aktive !");
+  };
+
   // --- RENDU PORTAIL CONNEXION ---
   if (!isLoggedIn) return (
     <SafeAreaView style={styles.loginContainer}>
       <StatusBar barStyle="light-content" backgroundColor="#0A1128" />
       <View style={styles.loginCard}>
+        {/* Toggle Online/Offline */}
+        <TouchableOpacity style={styles.inlineToggleOffline} onPress={toggleOfflineMode}>
+          <Text style={{color: isOnline ? '#06D6A0' : '#D90429', fontSize: 11, fontWeight: 'bold'}}>
+            ● {isOnline ? t('online') : t('offline')} ({t('toggle_offline')})
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.logoBadge}>
           <Text style={styles.logoText}>L</Text>
         </View>
@@ -842,10 +893,12 @@ export default function App() {
             </View>
           </View>
           <View style={{flexDirection:'row', alignItems:'center'}}>
-             <View style={styles.onlineBadge}>
-               <View style={styles.pulseDot} />
-               <Text style={styles.onlineText}>{isSyncing ? t('syncing') : t('online')}</Text>
-             </View>
+             <TouchableOpacity onPress={toggleOfflineMode} style={styles.onlineBadge}>
+               <View style={[styles.pulseDot, {backgroundColor: isOnline ? '#06D6A0' : '#D90429'}]} />
+               <Text style={[styles.onlineText, {color: isOnline ? '#06D6A0' : '#D90429'}]}>
+                 {isOnline ? t('online') : t('offline')}
+               </Text>
+             </TouchableOpacity>
              <TouchableOpacity onPress={changeLanguage} style={styles.langBadge}>
                <Text style={styles.langText}>{lang.toUpperCase()}</Text>
              </TouchableOpacity>
@@ -879,6 +932,16 @@ export default function App() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        {/* OFFLINE BANNER IF APPLICABLE */}
+        {!isOnline && (
+          <View style={[styles.announcementBanner, {backgroundColor: '#4A0E17'}]}>
+            <Text style={{color: '#FFB3C1', fontWeight: 'bold'}}>{lang === 'fr' ? '⚠️ MODE HORS-LIGNE ACTIVÉ' : '⚠️ OU SOU MÒD ÒFLIN'}</Text>
+            <Text style={{color: '#FFF', fontSize: 12, marginTop: 2}}>
+              {lang === 'fr' ? 'Affichage des données chargées lors de la dernière connexion.' : 'N ap afiche done ki te sove dènye fwa ou te konekte a.'}
+            </Text>
+          </View>
+        )}
+
         {/* ANNONCES / ALERTS */}
         {announcements.map(a => (
           <View key={a.id} style={styles.announcementBanner}>
@@ -1411,8 +1474,8 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   headerSubtitle: { color: '#8DA9C4', fontSize: 12 },
   onlineBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E293B', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, marginRight: 10 },
-  pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#06D6A0', marginRight: 5 },
-  onlineText: { color: '#06D6A0', fontSize: 10, fontWeight: 'bold' },
+  pulseDot: { width: 8, height: 8, borderRadius: 4, marginRight: 5 },
+  onlineText: { fontSize: 10, fontWeight: 'bold' },
   langBadge: { backgroundColor: '#1C2541', padding: 6, borderRadius: 8, marginRight: 10 },
   langText: { color: '#FFCC00', fontSize: 11, fontWeight: 'bold' },
   logoutBtn: { backgroundColor: '#D90429', padding: 6, borderRadius: 8 },
@@ -1513,5 +1576,7 @@ const styles = StyleSheet.create({
   saasMetricsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
   saasKpiCard: { flex: 1, backgroundColor: '#1C2541', padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5 },
   saasKpiValue: { color: '#FFCC00', fontSize: 24, fontWeight: 'bold' },
-  saasKpiLabel: { color: '#8DA9C4', fontSize: 11, marginTop: 4 }
+  saasKpiLabel: { color: '#8DA9C4', fontSize: 11, marginTop: 4 },
+
+  inlineToggleOffline: { alignSelf: 'flex-end', marginBottom: 10, padding: 5, backgroundColor: '#1C2541', borderRadius: 8 }
 });

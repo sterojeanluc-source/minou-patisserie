@@ -20,7 +20,7 @@ import Tabs from './components/Tabs';
 import Toast from './components/Toast';
 
 export default function App() {
-  // --- ÉTATS SYSTEMES & SAAS (MULTI-TENANT / MVP VERSION 0.1, 0.2, 0.3) ---
+  // --- ÉTATS SYSTEMES & SAAS (MULTI-TENANT / MVP VERSION 0.1 & 0.2 & 0.3) ---
   const [lang, setLang] = useState('ht');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState('');  // 'super_admin', 'school_admin', 'teacher', 'secretary', 'parent'
@@ -226,7 +226,7 @@ export default function App() {
       step1: "1. Kalite Enskripsyon",
       step2: "2. Enfòmasyon Elèv (NIE & Seri)",
       step3: "3. Dokiman Obligatwa yo",
-      step4: "4. Frais ak Peman Premye Fwa",
+      step4: "4. Frè ak Peman Premye Fwa",
       nie_placeholder: "NIE (MENFP) - eg: 123-456-789-0",
       serie_lbl: "Seri (SMP/SVT/SMP pou NS4)",
       next_btn: "Suiv",
@@ -503,6 +503,119 @@ export default function App() {
     await fetchAnnouncements();
     setIsSyncing(false);
     showToast("Tout done yo senkronize byen!");
+  };
+
+  // --- ACTIONS ENSEIGNANT DE PRESENCE ET DE NOTES ---
+  const markPresence = async (studentId, statut) => {
+    if (!isOnline) {
+      Alert.alert("Òflin", "Ou pa ka chanje prezans lè ou òflin !");
+      return;
+    }
+    setLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const { data: existing } = await supabase
+        .from('presences')
+        .select('id')
+        .eq('eleve_id', studentId)
+        .eq('date', today)
+        .eq('ecole_id', selectedSchoolId)
+        .maybeSingle();
+
+      if (existing) {
+        const { error } = await supabase
+          .from('presences')
+          .update({ statut })
+          .eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('presences')
+          .insert({
+            eleve_id: studentId,
+            date: today,
+            statut,
+            ecole_id: selectedSchoolId
+          });
+        if (error) throw error;
+      }
+      showToast(`Prezans make kòm ${statut}!`);
+      fetchAdminTeacherData();
+    } catch (err) {
+      Alert.alert("Erreur", "Echèk pandan anrejistreman prezans.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveTeacherGrades = async () => {
+    if (!isOnline) {
+      Alert.alert("Òflin", "Ou pa ka anrejistre nòt lè ou òflin !");
+      return;
+    }
+    const studentIds = Object.keys(notesMap);
+    if (studentIds.length === 0) {
+      return Alert.alert("Enfòmasyon", "Pa gen okenn nòt ki antre.");
+    }
+
+    setLoading(true);
+    try {
+      for (const sId of studentIds) {
+        const valStr = notesMap[sId];
+        if (!valStr || valStr.trim() === '') continue;
+
+        const val = parseFloat(valStr);
+        if (isNaN(val)) {
+          throw new Error("Nòt la dwe yon chif valab.");
+        }
+
+        // Cycle-aware validation (0-10 or 0-100)
+        const studentObj = studentsList.find(s => s.id === sId);
+        if (studentObj) {
+          const maxGrade = studentObj.classe === 'NS4' ? 100 : 10;
+          if (val < 0 || val > maxGrade) {
+            throw new Error(`Nòt pou ${studentObj.prenom} la dwe ant 0 ak ${maxGrade} (Klas: ${studentObj.classe}).`);
+          }
+        }
+
+        const { data: existing } = await supabase
+          .from('notes')
+          .select('id')
+          .eq('eleve_id', sId)
+          .eq('periode', selectedPeriode)
+          .eq('matiere', currentSubject)
+          .eq('ecole_id', selectedSchoolId)
+          .maybeSingle();
+
+        if (existing) {
+          const { error } = await supabase
+            .from('notes')
+            .update({ note: val })
+            .eq('id', existing.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('notes')
+            .insert({
+              eleve_id: sId,
+              periode: selectedPeriode,
+              matiere: currentSubject,
+              note: val,
+              coefficient: 1,
+              ecole_id: selectedSchoolId
+            });
+          if (error) throw error;
+        }
+      }
+
+      showToast("Nòt yo anrejistre ak siksè !");
+      setNotesMap({});
+      fetchAdminTeacherData();
+    } catch (err) {
+      Alert.alert("Erreur", err.message || "Echèk pandan anrejistreman nòt yo.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // --- ACTIONS PHOTO ---

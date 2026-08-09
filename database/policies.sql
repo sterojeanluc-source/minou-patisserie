@@ -1,23 +1,28 @@
 -- Lekòl Pam - Row Level Security (RLS) Policies
--- Version: MVP v0.1 Foundations
+-- Version: MVP v0.1 Foundations - Master Aligned
 -- Author: Jules, CTO & Product Architect
 
 -- Enable RLS on all operational core tables
-ALTER TABLE schools ENABLE ROW LEVEL SECURITY;
-ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE academic_years ENABLE ROW LEVEL SECURITY;
-ALTER TABLE academic_periods ENABLE ROW LEVEL SECURITY;
-ALTER TABLE academic_levels ENABLE ROW LEVEL SECURITY;
-ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE subjects ENABLE ROW LEVEL SECURITY;
-ALTER TABLE guardians ENABLE ROW LEVEL SECURITY;
-ALTER TABLE students ENABLE ROW LEVEL SECURITY;
-ALTER TABLE enrollments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE grades ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.schools ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.academic_years ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.academic_periods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.academic_levels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.academic_programs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.classes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.class_subjects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.guardians ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.student_guardians ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.teacher_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.grades ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 -- ==========================================
 -- HELPER FUNCTIONS FOR RLS MULTI-TENANCY
@@ -36,181 +41,112 @@ RETURNS TEXT AS $$
 $$ LANGUAGE sql STABLE;
 
 -- ==========================================
--- 1. SCHOOLS POLICIES
+-- RLS POLICIES FOR SECURE MULTI-TENANCY
 -- ==========================================
 
-CREATE POLICY school_super_admin_all ON schools
-    FOR ALL
-    USING (auth.get_user_role() = 'super_admin');
+-- 1. SCHOOLS
+CREATE POLICY school_super_admin ON public.schools
+    FOR ALL USING (auth.get_user_role() = 'super_admin');
 
-CREATE POLICY school_tenant_select ON schools
-    FOR SELECT
-    USING (id = auth.get_user_school_id());
+CREATE POLICY school_tenant_select ON public.schools
+    FOR SELECT USING (id = auth.get_user_school_id());
 
--- ==========================================
--- 2. ROLES POLICIES
--- ==========================================
+-- 2. PROFILES
+CREATE POLICY profiles_isolation ON public.profiles
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
-CREATE POLICY role_isolation_all ON roles
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'super_admin'));
+-- 3. ROLES
+CREATE POLICY roles_isolation ON public.roles
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
-CREATE POLICY role_isolation_select ON roles
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
+-- 4. USER ROLES
+CREATE POLICY user_roles_isolation ON public.user_roles
+    FOR ALL USING (
+        user_id IN (SELECT id FROM public.profiles WHERE school_id = auth.get_user_school_id())
+    );
 
--- ==========================================
--- 3. USERS POLICIES
--- ==========================================
+-- 5. ACADEMIC YEARS
+CREATE POLICY academic_years_isolation ON public.academic_years
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
-CREATE POLICY user_isolation_all ON users
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'super_admin'));
+-- 6. ACADEMIC PERIODS
+CREATE POLICY academic_periods_isolation ON public.academic_periods
+    FOR ALL USING (
+        academic_year_id IN (SELECT id FROM public.academic_years WHERE school_id = auth.get_user_school_id())
+    );
 
-CREATE POLICY user_isolation_select ON users
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
+-- 7. ACADEMIC LEVELS
+CREATE POLICY academic_levels_isolation ON public.academic_levels
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
--- ==========================================
--- 4. ACADEMIC YEARS POLICIES
--- ==========================================
+-- 8. ACADEMIC PROGRAMS
+CREATE POLICY academic_programs_isolation ON public.academic_programs
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
-CREATE POLICY academic_years_isolation_all ON academic_years
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
+-- 9. CLASSES
+CREATE POLICY classes_isolation ON public.classes
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
-CREATE POLICY academic_years_isolation_select ON academic_years
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
+-- 10. SUBJECTS
+CREATE POLICY subjects_isolation ON public.subjects
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
--- ==========================================
--- 5. ACADEMIC PERIODS POLICIES
--- ==========================================
+-- 11. CLASS SUBJECTS
+CREATE POLICY class_subjects_isolation ON public.class_subjects
+    FOR ALL USING (
+        class_id IN (SELECT id FROM public.classes WHERE school_id = auth.get_user_school_id())
+    );
 
-CREATE POLICY academic_periods_isolation_all ON academic_periods
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
+-- 12. STUDENTS
+CREATE POLICY students_isolation ON public.students
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
-CREATE POLICY academic_periods_isolation_select ON academic_periods
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
+-- 13. GUARDIANS
+CREATE POLICY guardians_isolation ON public.guardians
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
--- ==========================================
--- 6. ACADEMIC LEVELS POLICIES
--- ==========================================
+-- 14. STUDENT GUARDIANS
+CREATE POLICY student_guardians_isolation ON public.student_guardians
+    FOR ALL USING (
+        student_id IN (SELECT id FROM public.students WHERE school_id = auth.get_user_school_id())
+    );
 
-CREATE POLICY academic_levels_isolation_all ON academic_levels
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
+-- 15. ENROLLMENTS
+CREATE POLICY enrollments_isolation ON public.enrollments
+    FOR ALL USING (
+        student_id IN (SELECT id FROM public.students WHERE school_id = auth.get_user_school_id())
+    );
 
-CREATE POLICY academic_levels_isolation_select ON academic_levels
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
+-- 16. TEACHER ASSIGNMENTS
+CREATE POLICY teacher_assignments_isolation ON public.teacher_assignments
+    FOR ALL USING (
+        class_id IN (SELECT id FROM public.classes WHERE school_id = auth.get_user_school_id())
+    );
 
--- ==========================================
--- 7. CLASSES POLICIES
--- ==========================================
+-- 17. GRADES
+CREATE POLICY grades_isolation ON public.grades
+    FOR ALL USING (
+        enrollment_id IN (
+            SELECT id FROM public.enrollments WHERE student_id IN (
+                SELECT id FROM public.students WHERE school_id = auth.get_user_school_id()
+            )
+        )
+    );
 
-CREATE POLICY classes_isolation_all ON classes
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
+-- 18. ATTENDANCE
+CREATE POLICY attendance_isolation ON public.attendance
+    FOR ALL USING (
+        enrollment_id IN (
+            SELECT id FROM public.enrollments WHERE student_id IN (
+                SELECT id FROM public.students WHERE school_id = auth.get_user_school_id()
+            )
+        )
+    );
 
-CREATE POLICY classes_isolation_select ON classes
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
+-- 19. PAYMENTS
+CREATE POLICY payments_isolation ON public.payments
+    FOR ALL USING (school_id = auth.get_user_school_id());
 
--- ==========================================
--- 8. SUBJECTS POLICIES
--- ==========================================
-
-CREATE POLICY subjects_isolation_all ON subjects
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
-
-CREATE POLICY subjects_isolation_select ON subjects
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
-
--- ==========================================
--- 9. GUARDIANS POLICIES
--- ==========================================
-
-CREATE POLICY guardians_isolation_all ON guardians
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
-
-CREATE POLICY guardians_isolation_select ON guardians
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
-
--- ==========================================
--- 10. STUDENTS POLICIES
--- ==========================================
-
-CREATE POLICY students_isolation_all ON students
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
-
-CREATE POLICY students_isolation_select ON students
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
-
--- ==========================================
--- 11. ENROLLMENTS POLICIES
--- ==========================================
-
-CREATE POLICY enrollments_isolation_all ON enrollments
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
-
-CREATE POLICY enrollments_isolation_select ON enrollments
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
-
--- ==========================================
--- 12. GRADES POLICIES
--- ==========================================
-
-CREATE POLICY grades_isolation_write ON grades
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'teacher', 'super_admin'));
-
-CREATE POLICY grades_isolation_select ON grades
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
-
--- ==========================================
--- 13. ATTENDANCE POLICIES
--- ==========================================
-
-CREATE POLICY attendance_isolation_write ON attendance
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'teacher', 'super_admin'));
-
-CREATE POLICY attendance_isolation_select ON attendance
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
-
--- ==========================================
--- 14. PAYMENTS POLICIES
--- ==========================================
-
-CREATE POLICY payments_isolation_write ON payments
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
-
-CREATE POLICY payments_isolation_select ON payments
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
-
--- ==========================================
--- 15. NOTIFICATIONS POLICIES
--- ==========================================
-
-CREATE POLICY notifications_isolation_write ON notifications
-    FOR ALL
-    USING (school_id = auth.get_user_school_id() AND auth.get_user_role() IN ('school_admin', 'secretary', 'super_admin'));
-
-CREATE POLICY notifications_isolation_select ON notifications
-    FOR SELECT
-    USING (school_id = auth.get_user_school_id());
+-- 20. NOTIFICATIONS
+CREATE POLICY notifications_isolation ON public.notifications
+    FOR ALL USING (school_id = auth.get_user_school_id());

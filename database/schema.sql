@@ -1,319 +1,606 @@
--- Lekòl Pam - Database Schema (PostgreSQL for Supabase)
--- Version: MVP v0.1 Foundations
--- Author: Jules, CTO & Product Architect
+-- ============================================================
+-- LEKÒL PAM — DATABASE FOUNDATION
+-- LP-CODE-001
+-- ============================================================
 
--- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- ==========================================
--- 1. SCHOOLS (Multi-Tenant Tenants)
--- ==========================================
-CREATE TABLE IF NOT EXISTS schools (
+-- ============================================================
+-- 1. SCHOOLS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.schools (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    nom_ecole VARCHAR(255) NOT NULL,
-    subdomain VARCHAR(100) UNIQUE NOT NULL,
-    statut_abonnement VARCHAR(50) NOT NULL DEFAULT 'active', -- 'active', 'suspended', 'trial'
-    type_cycle VARCHAR(50) NOT NULL DEFAULT 'Mixte', -- 'Fondamental', 'Secondaire', 'Mixte'
-    adresse TEXT,
-    telephone VARCHAR(50),
-    email VARCHAR(255),
+
+    name TEXT NOT NULL,
+    code TEXT UNIQUE,
     logo_url TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    created_by UUID,
-    updated_by UUID,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    deleted_by UUID,
-    delete_reason TEXT,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    address TEXT,
+    phone TEXT,
+    email TEXT,
+
+    language TEXT DEFAULT 'fr',
+    currency TEXT DEFAULT 'HTG',
+    timezone TEXT DEFAULT 'America/Port-au-Prince',
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ==========================================
--- 2. ROLES (RBAC Permissions)
--- ==========================================
-CREATE TABLE IF NOT EXISTS roles (
+
+-- ============================================================
+-- 2. USERS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE,
-    nom VARCHAR(100) NOT NULL, -- 'super_admin', 'school_admin', 'teacher', 'secretary', 'parent'
-    permissions JSONB DEFAULT '[]'::jsonb NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    school_id UUID REFERENCES public.schools(id) ON DELETE CASCADE,
+
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+
+    phone TEXT,
+    avatar_url TEXT,
+
+    is_active BOOLEAN NOT NULL DEFAULT true,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ==========================================
--- 3. USERS (Platform Staff and Accounts)
--- ==========================================
-CREATE TABLE IF NOT EXISTS users (
+
+-- ============================================================
+-- 3. ROLES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.roles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    auth_user_id UUID UNIQUE, -- Connects with Supabase auth.users
-    email VARCHAR(255) NOT NULL,
-    telephone VARCHAR(50),
-    nom VARCHAR(100) NOT NULL,
-    prenom VARCHAR(100) NOT NULL,
-    role_id UUID REFERENCES roles(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    created_by UUID,
-    updated_by UUID,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    deleted_by UUID,
-    delete_reason TEXT,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL,
-    CONSTRAINT unique_school_email UNIQUE (school_id, email)
+
+    school_id UUID REFERENCES public.schools(id) ON DELETE CASCADE,
+
+    name TEXT NOT NULL,
+    description TEXT,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (school_id, name)
 );
 
--- ==========================================
--- 4. ACADEMIC YEARS
--- ==========================================
-CREATE TABLE IF NOT EXISTS academic_years (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    label VARCHAR(100) NOT NULL, -- ex: '2025-2026'
-    date_debut DATE NOT NULL,
-    date_fin DATE NOT NULL,
-    est_active BOOLEAN DEFAULT false NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+-- ============================================================
+-- 4. USER ROLES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.user_roles (
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    role_id UUID NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (user_id, role_id)
 );
 
--- ==========================================
--- 5. ACADEMIC PERIODS (Configurable: 3 Trimestres, 5 Étapes, Custom)
--- ==========================================
-CREATE TABLE IF NOT EXISTS academic_periods (
+
+-- ============================================================
+-- 5. ACADEMIC YEARS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.academic_years (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    year_id UUID REFERENCES academic_years(id) ON DELETE CASCADE NOT NULL,
-    label VARCHAR(100) NOT NULL, -- ex: '1er Trimestre', 'Étape 1'
-    type_periode VARCHAR(50) NOT NULL DEFAULT 'Trimestre', -- 'Trimestre', 'Etape', 'Custom'
-    numero_ordre INT NOT NULL,
-    poids DECIMAL(5,2) DEFAULT 1.00 NOT NULL, -- Poids ou coefficient de la période dans la moyenne annuelle
-    date_debut DATE NOT NULL,
-    date_fin DATE NOT NULL,
-    est_verrouille BOOLEAN DEFAULT false NOT NULL, -- Verrouillage de la saisie des notes
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+
+    name TEXT NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'active', 'closed', 'archived')),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (school_id, name)
 );
 
--- ==========================================
--- 6. ACADEMIC LEVELS (Niveaux d'études)
--- ==========================================
-CREATE TABLE IF NOT EXISTS academic_levels (
+
+-- ============================================================
+-- 6. ACADEMIC PERIODS
+-- Supports 3 trimesters, 5 steps, or custom periods
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.academic_periods (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    nom VARCHAR(100) NOT NULL, -- ex: 'Maternelle', 'Fondamental 1-6', 'Fondamental 7-9', 'Secondaire'
-    code VARCHAR(50), -- ex: 'MAT', 'F1', 'F2', 'SEC'
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    academic_year_id UUID NOT NULL
+        REFERENCES public.academic_years(id)
+        ON DELETE CASCADE,
+
+    name TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+
+    start_date DATE,
+    end_date DATE,
+
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'active', 'closed')),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (academic_year_id, sequence)
 );
 
--- ==========================================
--- 7. CLASSES
--- ==========================================
-CREATE TABLE IF NOT EXISTS classes (
+
+-- ============================================================
+-- 7. ACADEMIC LEVELS
+-- Kindergarten, 1st AF, 7th AF, NS I, etc.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.academic_levels (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    level_id UUID REFERENCES academic_levels(id) ON DELETE CASCADE NOT NULL,
-    nom VARCHAR(100) NOT NULL, -- ex: '7ème AF A', 'NS4'
-    capacite_max INT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+
+    name TEXT NOT NULL,
+    code TEXT,
+
+    sequence INTEGER,
+
+    active BOOLEAN NOT NULL DEFAULT true,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (school_id, name)
 );
 
--- ==========================================
--- 8. SUBJECTS (Matières)
--- ==========================================
-CREATE TABLE IF NOT EXISTS subjects (
+
+-- ============================================================
+-- 8. PROGRAMS
+-- Classical, Technical, Sciences, etc.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.academic_programs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    nom VARCHAR(255) NOT NULL, -- ex: 'Mathématiques', 'Physique'
-    code VARCHAR(50),
-    coefficient_defaut INT DEFAULT 1 NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+
+    name TEXT NOT NULL,
+    description TEXT,
+
+    active BOOLEAN NOT NULL DEFAULT true,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (school_id, name)
 );
 
--- ==========================================
--- 9. GUARDIANS (Parents / Responsables)
--- ==========================================
-CREATE TABLE IF NOT EXISTS guardians (
+
+-- ============================================================
+-- 9. CLASSES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.classes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    nom VARCHAR(100) NOT NULL,
-    prenom VARCHAR(100) NOT NULL,
-    telephone_principal VARCHAR(50) NOT NULL,
-    telephone_secondaire VARCHAR(50),
-    email VARCHAR(255),
-    relation VARCHAR(100) DEFAULT 'Mère', -- 'Père', 'Mère', 'Tuteur', etc.
-    adresse TEXT,
-    responsable_financier BOOLEAN DEFAULT true NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    created_by UUID,
-    updated_by UUID,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    deleted_by UUID,
-    delete_reason TEXT,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+
+    academic_year_id UUID NOT NULL
+        REFERENCES public.academic_years(id)
+        ON DELETE CASCADE,
+
+    academic_level_id UUID NOT NULL
+        REFERENCES public.academic_levels(id),
+
+    program_id UUID REFERENCES public.academic_programs(id),
+
+    name TEXT NOT NULL,
+
+    capacity INTEGER,
+
+    active BOOLEAN NOT NULL DEFAULT true,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ==========================================
--- 10. STUDENTS (Élèves)
--- ==========================================
-CREATE TABLE IF NOT EXISTS students (
+
+-- ============================================================
+-- 10. SUBJECTS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.subjects (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    matricule VARCHAR(100) UNIQUE NOT NULL,
-    nie_menfp VARCHAR(100), -- Numéro d'Identification Unique MENFP
-    nom VARCHAR(100) NOT NULL,
-    prenom VARCHAR(100) NOT NULL,
-    sexe CHAR(1) CHECK (sexe IN ('M', 'F')) NOT NULL,
-    date_naissance DATE NOT NULL,
-    adresse TEXT,
+
+    school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+
+    name TEXT NOT NULL,
+    code TEXT,
+
+    active BOOLEAN NOT NULL DEFAULT true,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (school_id, name)
+);
+
+
+-- ============================================================
+-- 11. CLASS SUBJECTS
+-- Which subjects belong to which class
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.class_subjects (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    class_id UUID NOT NULL REFERENCES public.classes(id) ON DELETE CASCADE,
+    subject_id UUID NOT NULL REFERENCES public.subjects(id) ON DELETE CASCADE,
+
+    coefficient NUMERIC(6,2) DEFAULT 1,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (class_id, subject_id)
+);
+
+
+-- ============================================================
+-- 12. STUDENTS
+-- Permanent student identity
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.students (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+
+    student_number TEXT NOT NULL,
+
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+
+    date_of_birth DATE,
+
     photo_url TEXT,
-    guardian_id UUID REFERENCES guardians(id) ON DELETE SET NULL,
-    solde_du DECIMAL(12,2) DEFAULT 0.00 NOT NULL, -- Reste à payer pour l'année scolaire en cours
-    serie_ns4 VARCHAR(50), -- Optionnel pour NS4: 'SVT', 'SMP', 'SES', 'LLC'
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    created_by UUID,
-    updated_by UUID,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    deleted_by UUID,
-    delete_reason TEXT,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    gender TEXT,
+
+    address TEXT,
+
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (
+            status IN (
+                'applicant',
+                'active',
+                'on_leave',
+                'transferred',
+                'withdrawn',
+                'graduated',
+                'alumni',
+                'inactive'
+            )
+        ),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (school_id, student_number)
 );
 
--- ==========================================
--- 11. ENROLLMENTS (Inscriptions Annuelles des Élèves)
--- ==========================================
-CREATE TABLE IF NOT EXISTS enrollments (
+
+-- ============================================================
+-- 13. GUARDIANS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.guardians (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    student_id UUID REFERENCES students(id) ON DELETE CASCADE NOT NULL,
-    class_id UUID REFERENCES classes(id) ON DELETE CASCADE NOT NULL,
-    year_id UUID REFERENCES academic_years(id) ON DELETE CASCADE NOT NULL,
-    date_inscription DATE DEFAULT CURRENT_DATE NOT NULL,
-    type_inscription VARCHAR(50) DEFAULT 'Nouveau' NOT NULL, -- 'Nouveau', 'Re-inscription'
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL,
-    CONSTRAINT unique_student_year UNIQUE (student_id, year_id)
+
+    school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+
+    relationship TEXT,
+
+    phone TEXT,
+    email TEXT,
+
+    address TEXT,
+
+    preferred_language TEXT DEFAULT 'fr',
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ==========================================
--- 12. GRADES (Notes)
--- ==========================================
-CREATE TABLE IF NOT EXISTS grades (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    student_id UUID REFERENCES students(id) ON DELETE CASCADE NOT NULL,
-    subject_id UUID REFERENCES subjects(id) ON DELETE CASCADE NOT NULL,
-    period_id UUID REFERENCES academic_periods(id) ON DELETE CASCADE NOT NULL,
-    note DECIMAL(5,2) NOT NULL, -- Cycle validation checked in domain (0-10 or 0-100)
-    coefficient INT DEFAULT 1 NOT NULL,
-    appreciation TEXT,
-    saisi_par UUID REFERENCES users(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+-- ============================================================
+-- 14. STUDENT GUARDIANS
+-- Many-to-many relationship
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.student_guardians (
+    student_id UUID NOT NULL
+        REFERENCES public.students(id)
+        ON DELETE CASCADE,
+
+    guardian_id UUID NOT NULL
+        REFERENCES public.guardians(id)
+        ON DELETE CASCADE,
+
+    is_primary BOOLEAN NOT NULL DEFAULT false,
+
+    can_view_academic BOOLEAN NOT NULL DEFAULT true,
+    can_view_finance BOOLEAN NOT NULL DEFAULT true,
+    can_receive_notifications BOOLEAN NOT NULL DEFAULT true,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (student_id, guardian_id)
 );
 
--- ==========================================
--- 13. ATTENDANCE (Présences)
--- ==========================================
-CREATE TABLE IF NOT EXISTS attendance (
+
+-- ============================================================
+-- 15. ENROLLMENTS
+-- Student's yearly school registration
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.enrollments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    student_id UUID REFERENCES students(id) ON DELETE CASCADE NOT NULL,
-    class_id UUID REFERENCES classes(id) ON DELETE CASCADE NOT NULL,
-    date DATE DEFAULT CURRENT_DATE NOT NULL,
-    statut VARCHAR(50) NOT NULL, -- 'Présent', 'Absent', 'En Retard'
-    remarque TEXT,
-    marque_par UUID REFERENCES users(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL,
-    CONSTRAINT unique_student_attendance_date UNIQUE (student_id, date)
+
+    student_id UUID NOT NULL
+        REFERENCES public.students(id)
+        ON DELETE CASCADE,
+
+    academic_year_id UUID NOT NULL
+        REFERENCES public.academic_years(id)
+        ON DELETE CASCADE,
+
+    class_id UUID NOT NULL
+        REFERENCES public.classes(id),
+
+    enrollment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (
+            status IN (
+                'pending',
+                'active',
+                'promoted',
+                'repeated',
+                'conditional',
+                'withdrawn',
+                'transferred',
+                'graduated'
+            )
+        ),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (student_id, academic_year_id)
 );
 
--- ==========================================
--- 14. PAYMENTS (Paiements et Recouvrements)
--- ==========================================
-CREATE TABLE IF NOT EXISTS payments (
+
+-- ============================================================
+-- 16. TEACHER ASSIGNMENTS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.teacher_assignments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    student_id UUID REFERENCES students(id) ON DELETE CASCADE NOT NULL,
-    montant_paye DECIMAL(12,2) NOT NULL,
-    methode_paiement VARCHAR(50) NOT NULL, -- 'MonCash', 'NatCash', 'Cash', 'Cheque'
-    reference_transaction VARCHAR(255), -- ID Transaction MonCash ou Natcom
-    date_paiement TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    recu_par UUID REFERENCES users(id),
-    recu_numero VARCHAR(100) NOT NULL, -- Numéro de reçu incrémental unique
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    teacher_id UUID NOT NULL
+        REFERENCES public.profiles(id)
+        ON DELETE CASCADE,
+
+    class_id UUID NOT NULL
+        REFERENCES public.classes(id)
+        ON DELETE CASCADE,
+
+    subject_id UUID
+        REFERENCES public.subjects(id)
+        ON DELETE CASCADE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (teacher_id, class_id, subject_id)
 );
 
--- ==========================================
--- 15. NOTIFICATIONS
--- ==========================================
-CREATE TABLE IF NOT EXISTS notifications (
+
+-- ============================================================
+-- 17. GRADES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.grades (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID REFERENCES schools(id) ON DELETE CASCADE NOT NULL,
-    destinataire_type VARCHAR(50) NOT NULL, -- 'Parent', 'User', 'Student'
-    destinataire_id UUID NOT NULL, -- ID générique (Parent.id, User.id, etc.)
-    canal VARCHAR(50) NOT NULL, -- 'WhatsApp', 'SMS', 'Internal'
-    titre VARCHAR(255) NOT NULL,
+
+    enrollment_id UUID NOT NULL
+        REFERENCES public.enrollments(id)
+        ON DELETE CASCADE,
+
+    academic_period_id UUID NOT NULL
+        REFERENCES public.academic_periods(id)
+        ON DELETE CASCADE,
+
+    subject_id UUID NOT NULL
+        REFERENCES public.subjects(id),
+
+    score NUMERIC(6,2),
+
+    max_score NUMERIC(6,2) NOT NULL DEFAULT 20,
+
+    comment TEXT,
+
+    entered_by UUID
+        REFERENCES public.profiles(id),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
+-- ============================================================
+-- 18. ATTENDANCE
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.attendance (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    enrollment_id UUID NOT NULL
+        REFERENCES public.enrollments(id)
+        ON DELETE CASCADE,
+
+    attendance_date DATE NOT NULL,
+
+    status TEXT NOT NULL
+        CHECK (
+            status IN (
+                'present',
+                'absent',
+                'late',
+                'excused'
+            )
+        ),
+
+    note TEXT,
+
+    recorded_by UUID
+        REFERENCES public.profiles(id),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (enrollment_id, attendance_date)
+);
+
+
+-- ============================================================
+-- 19. PAYMENTS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.payments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    school_id UUID NOT NULL
+        REFERENCES public.schools(id)
+        ON DELETE CASCADE,
+
+    student_id UUID NOT NULL
+        REFERENCES public.students(id),
+
+    guardian_id UUID
+        REFERENCES public.guardians(id),
+
+    amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+
+    currency TEXT NOT NULL DEFAULT 'HTG',
+
+    payment_method TEXT NOT NULL
+        CHECK (
+            payment_method IN (
+                'cash',
+                'moncash',
+                'bank',
+                'card',
+                'other'
+            )
+        ),
+
+    reference TEXT,
+
+    payment_date TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    recorded_by UUID
+        REFERENCES public.profiles(id),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
+-- ============================================================
+-- 20. NOTIFICATIONS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    school_id UUID NOT NULL
+        REFERENCES public.schools(id)
+        ON DELETE CASCADE,
+
+    recipient_id UUID NOT NULL
+        REFERENCES public.profiles(id)
+        ON DELETE CASCADE,
+
+    title TEXT NOT NULL,
     message TEXT NOT NULL,
-    statut_envoi VARCHAR(50) DEFAULT 'Pending' NOT NULL, -- 'Pending', 'Sent', 'Failed'
-    date_envoi TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active' NOT NULL
+
+    type TEXT NOT NULL DEFAULT 'general',
+
+    read_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ==========================================
--- AUTOMATIC UPDATED_AT TRIGGERS
--- ==========================================
 
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
+-- ============================================================
+-- INDEXES
+-- ============================================================
 
--- Apply updated_at trigger to all tables
-DO $$
-DECLARE
-    t TEXT;
+CREATE INDEX IF NOT EXISTS idx_profiles_school
+ON public.profiles(school_id);
+
+CREATE INDEX IF NOT EXISTS idx_students_school
+ON public.students(school_id);
+
+CREATE INDEX IF NOT EXISTS idx_enrollments_student
+ON public.enrollments(student_id);
+
+CREATE INDEX IF NOT EXISTS idx_enrollments_year
+ON public.enrollments(academic_year_id);
+
+CREATE INDEX IF NOT EXISTS idx_classes_school
+ON public.classes(school_id);
+
+CREATE INDEX IF NOT EXISTS idx_grades_enrollment
+ON public.grades(enrollment_id);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_enrollment
+ON public.attendance(enrollment_id);
+
+CREATE INDEX IF NOT EXISTS idx_payments_student
+ON public.payments(student_id);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient
+ON public.notifications(recipient_id);
+
+
+-- ============================================================
+-- UPDATED_AT FUNCTION
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.update_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
 BEGIN
-    FOR t IN
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_type = 'BASE TABLE'
-    LOOP
-        EXECUTE format('CREATE TRIGGER trigger_update_timestamp BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();', t);
-    END LOOP;
+    new.updated_at = now();
+    RETURN new;
 END;
 $$;
+
+
+CREATE OR REPLACE TRIGGER schools_updated_at
+BEFORE UPDATE ON public.schools
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+CREATE OR REPLACE TRIGGER profiles_updated_at
+BEFORE UPDATE ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+CREATE OR REPLACE TRIGGER students_updated_at
+BEFORE UPDATE ON public.students
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+CREATE OR REPLACE TRIGGER grades_updated_at
+BEFORE UPDATE ON public.grades
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();

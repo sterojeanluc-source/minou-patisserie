@@ -1,6 +1,6 @@
 -- ============================================================
 -- LEKÒL PAM — TEST JOURNEY SEED
--- LP-CODE-001 & LP-CODE-003 Validation
+-- LP-CODE-001 & LP-CODE-003 & LP-CODE-004 Validation
 -- ============================================================
 
 -- 1. Create the School
@@ -261,3 +261,38 @@ VALUES
 ('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e021', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e019', 'En cours d''acquisition', 'EN_COURS', 2),
 ('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e022', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e019', 'À renforcer', 'A_RENFORCER', 3)
 ON CONFLICT (grading_mode_id, code) DO NOTHING;
+
+
+-- ============================================================
+-- LP-CODE-004 SEEDS: OFFICERS AND ROLES SEED
+-- ============================================================
+
+-- 21. Add the 7 Official Multi-tenant Roles
+INSERT INTO public.roles (id, school_id, name, description)
+VALUES
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e023', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'DIRECTOR', 'Direction générale de l''école'),
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e024', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'ADMIN', 'Administrateur système'),
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e025', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'SECRETARY', 'Secrétariat'),
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e026', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'TEACHER', 'Enseignant'),
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e027', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'ACCOUNTANT', 'Comptabilité'),
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e028', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'PARENT', 'Parent ou responsable'),
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e029', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'STUDENT', 'Élève')
+ON CONFLICT (school_id, name) DO NOTHING;
+
+-- 22. INSTRUCTIONS FOR SETTING UP REAL USERS (MOCK-UP REFERENCE FOR SUPABASE SQL CONSOLE)
+-- To bind a real Supabase Auth user to Jean Directeur, execute the following SQL:
+--
+-- INSERT INTO public.profiles (id, school_id, first_name, last_name, phone)
+-- VALUES (
+--     'USER_UUID_FROM_SUPABASE_AUTH', -- Replace with the generated Supabase Auth UID
+--     'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001',
+--     'Jean',
+--     'Directeur',
+--     '+509 0000 0000'
+-- ) ON CONFLICT (id) DO NOTHING;
+--
+-- INSERT INTO public.user_roles (user_id, role_id)
+-- VALUES (
+--     'USER_UUID_FROM_SUPABASE_AUTH', -- Replace with the generated Supabase Auth UID
+--     'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e023' -- Matches DIRECTOR role id
+-- ) ON CONFLICT (user_id, role_id) DO NOTHING;

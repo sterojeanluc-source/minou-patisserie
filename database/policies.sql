@@ -1,5 +1,5 @@
 -- Lekòl Pam - Row Level Security (RLS) Policies
--- Version: MVP v0.1 Foundations - Master Aligned
+-- Version: MVP v0.1 Foundations - Master Aligned Aligns (LP-CODE-004)
 -- Author: Jules, CTO & Product Architect
 
 -- Enable RLS on all operational core tables
@@ -28,142 +28,274 @@ ALTER TABLE public.grading_modes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.grading_labels ENABLE ROW LEVEL SECURITY;
 
 -- ==========================================
--- HELPER FUNCTIONS FOR RLS MULTI-TENANCY
+-- HELPER FUNCTIONS FOR RLS MULTI-TENANCY & ROLES
 -- ==========================================
 
--- Extract the active school_id from JWT metadata (custom claim in Supabase Auth JWT)
-CREATE OR REPLACE FUNCTION auth.get_user_school_id()
-RETURNS UUID AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb->'user_metadata'->>'school_id', '')::UUID;
-$$ LANGUAGE sql STABLE;
+-- Extract school_id for the logged-in user profile
+CREATE OR REPLACE FUNCTION public.current_user_school_id()
+RETURNS UUID
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT school_id
+    FROM public.profiles
+    WHERE id = auth.uid()
+    LIMIT 1;
+$$;
 
--- Extract the user's role from JWT metadata
-CREATE OR REPLACE FUNCTION auth.get_user_role()
-RETURNS TEXT AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb->'user_metadata'->>'role', '')::TEXT;
-$$ LANGUAGE sql STABLE;
+-- Verify if the logged-in user profile holds a specific role name
+CREATE OR REPLACE FUNCTION public.current_user_has_role(
+    required_role TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        from public.user_roles ur
+        join public.roles r
+            on r.id = ur.role_id
+        where ur.user_id = auth.uid()
+          and r.name = required_role
+    );
+$$;
+
+-- Quick check for director privilege level
+CREATE OR REPLACE FUNCTION public.is_school_director()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT public.current_user_has_role('DIRECTOR');
+$$;
 
 -- ==========================================
--- RLS POLICIES FOR SECURE MULTI-TENANCY
+-- RLS POLICIES FOR SECURE MULTI-TENANCY (LP-CODE-004)
 -- ==========================================
 
 -- 1. SCHOOLS
-CREATE POLICY school_super_admin ON public.schools
-    FOR ALL USING (auth.get_user_role() = 'super_admin');
+CREATE POLICY "School super admin all" ON public.schools
+    FOR ALL USING (public.current_user_has_role('super_admin'));
 
-CREATE POLICY school_tenant_select ON public.schools
-    FOR SELECT USING (id = auth.get_user_school_id());
+CREATE POLICY "Users can view their school" ON public.schools
+    FOR SELECT TO authenticated USING (id = public.current_user_school_id());
 
 -- 2. PROFILES
-CREATE POLICY profiles_isolation ON public.profiles
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "Users can view profiles in their school" ON public.profiles
+    FOR SELECT TO authenticated USING (school_id = public.current_user_school_id());
+
+CREATE POLICY "School admin insert update delete profiles" ON public.profiles
+    FOR ALL TO authenticated USING (
+        school_id = public.current_user_school_id()
+        AND (public.current_user_has_role('DIRECTOR') OR public.current_user_has_role('ADMIN'))
+    );
 
 -- 3. ROLES
-CREATE POLICY roles_isolation ON public.roles
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "Roles isolation" ON public.roles
+    FOR ALL USING (school_id = public.current_user_school_id());
 
 -- 4. USER ROLES
-CREATE POLICY user_roles_isolation ON public.user_roles
+CREATE POLICY "User roles isolation" ON public.user_roles
     FOR ALL USING (
-        user_id IN (SELECT id FROM public.profiles WHERE school_id = auth.get_user_school_id())
+        user_id IN (SELECT id FROM public.profiles WHERE school_id = public.current_user_school_id())
     );
 
 -- 5. ACADEMIC YEARS
-CREATE POLICY academic_years_isolation ON public.academic_years
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "School users can view academic years" ON public.academic_years
+    FOR SELECT TO authenticated USING (school_id = public.current_user_school_id());
+
+CREATE POLICY "Authorized staff edit academic years" ON public.academic_years
+    FOR ALL TO authenticated USING (
+        school_id = public.current_user_school_id()
+        AND (public.current_user_has_role('DIRECTOR') OR public.current_user_has_role('ADMIN') OR public.current_user_has_role('SECRETARY'))
+    );
 
 -- 6. ACADEMIC PERIODS
-CREATE POLICY academic_periods_isolation ON public.academic_periods
+CREATE POLICY "Periods isolation" ON public.academic_periods
     FOR ALL USING (
-        academic_year_id IN (SELECT id FROM public.academic_years WHERE school_id = auth.get_user_school_id())
+        academic_year_id IN (SELECT id FROM public.academic_years WHERE school_id = public.current_user_school_id())
     );
 
 -- 7. ACADEMIC LEVELS
-CREATE POLICY academic_levels_isolation ON public.academic_levels
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "Academic levels isolation" ON public.academic_levels
+    FOR ALL USING (school_id = public.current_user_school_id());
 
 -- 8. ACADEMIC PROGRAMS
-CREATE POLICY academic_programs_isolation ON public.academic_programs
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "Academic programs isolation" ON public.academic_programs
+    FOR ALL USING (school_id = public.current_user_school_id());
 
 -- 9. CLASSES
-CREATE POLICY classes_isolation ON public.classes
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "School users can view classes" ON public.classes
+    FOR SELECT TO authenticated USING (school_id = public.current_user_school_id());
+
+CREATE POLICY "Authorized staff edit classes" ON public.classes
+    FOR ALL TO authenticated USING (
+        school_id = public.current_user_school_id()
+        AND (public.current_user_has_role('DIRECTOR') OR public.current_user_has_role('ADMIN') OR public.current_user_has_role('SECRETARY'))
+    );
 
 -- 10. SUBJECTS
-CREATE POLICY subjects_isolation ON public.subjects
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "School users can view subjects" ON public.subjects
+    FOR SELECT TO authenticated USING (school_id = public.current_user_school_id());
+
+CREATE POLICY "Authorized staff edit subjects" ON public.subjects
+    FOR ALL TO authenticated USING (
+        school_id = public.current_user_school_id()
+        AND (public.current_user_has_role('DIRECTOR') OR public.current_user_has_role('ADMIN'))
+    );
 
 -- 11. CLASS SUBJECTS
-CREATE POLICY class_subjects_isolation ON public.class_subjects
+CREATE POLICY "Class subjects isolation" ON public.class_subjects
     FOR ALL USING (
-        class_id IN (SELECT id FROM public.classes WHERE school_id = auth.get_user_school_id())
+        class_id IN (SELECT id FROM public.classes WHERE school_id = public.current_user_school_id())
     );
 
 -- 12. STUDENTS
-CREATE POLICY students_isolation ON public.students
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "School users can view students" ON public.students
+    FOR SELECT TO authenticated USING (school_id = public.current_user_school_id());
+
+CREATE POLICY "Authorized staff can create students" ON public.students
+    FOR INSERT TO authenticated WITH CHECK (
+        school_id = public.current_user_school_id()
+        AND (
+            public.current_user_has_role('DIRECTOR')
+            OR public.current_user_has_role('ADMIN')
+            OR public.current_user_has_role('SECRETARY')
+        )
+    );
+
+CREATE POLICY "Authorized staff can update students" ON public.students
+    FOR UPDATE TO authenticated USING (
+        school_id = public.current_user_school_id()
+        AND (
+            public.current_user_has_role('DIRECTOR')
+            OR public.current_user_has_role('ADMIN')
+            OR public.current_user_has_role('SECRETARY')
+        )
+    ) WITH CHECK (school_id = public.current_user_school_id());
 
 -- 13. GUARDIANS
-CREATE POLICY guardians_isolation ON public.guardians
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "School users can view guardians" ON public.guardians
+    FOR SELECT TO authenticated USING (school_id = public.current_user_school_id());
+
+CREATE POLICY "Authorized staff edit guardians" ON public.guardians
+    FOR ALL TO authenticated USING (
+        school_id = public.current_user_school_id()
+        AND (public.current_user_has_role('DIRECTOR') OR public.current_user_has_role('ADMIN') OR public.current_user_has_role('SECRETARY'))
+    );
 
 -- 14. STUDENT GUARDIANS
-CREATE POLICY student_guardians_isolation ON public.student_guardians
+CREATE POLICY "Student guardians isolation" ON public.student_guardians
     FOR ALL USING (
-        student_id IN (SELECT id FROM public.students WHERE school_id = auth.get_user_school_id())
+        student_id IN (SELECT id FROM public.students WHERE school_id = public.current_user_school_id())
     );
 
 -- 15. ENROLLMENTS
-CREATE POLICY enrollments_isolation ON public.enrollments
-    FOR ALL USING (
-        student_id IN (SELECT id FROM public.students WHERE school_id = auth.get_user_school_id())
+CREATE POLICY "School users can view enrollments" ON public.enrollments
+    FOR SELECT TO authenticated USING (
+        EXISTS (
+            SELECT 1 FROM public.students s
+            WHERE s.id = enrollments.student_id AND s.school_id = public.current_user_school_id()
+        )
+    );
+
+CREATE POLICY "Authorized staff edit enrollments" ON public.enrollments
+    FOR ALL TO authenticated USING (
+        EXISTS (
+            SELECT 1 FROM public.students s
+            WHERE s.id = enrollments.student_id AND s.school_id = public.current_user_school_id()
+        )
     );
 
 -- 16. TEACHER ASSIGNMENTS
-CREATE POLICY teacher_assignments_isolation ON public.teacher_assignments
+CREATE POLICY "Teacher assignments isolation" ON public.teacher_assignments
     FOR ALL USING (
-        class_id IN (SELECT id FROM public.classes WHERE school_id = auth.get_user_school_id())
+        class_id IN (SELECT id FROM public.classes WHERE school_id = public.current_user_school_id())
     );
 
 -- 17. GRADES
-CREATE POLICY grades_isolation ON public.grades
-    FOR ALL USING (
-        enrollment_id IN (
-            SELECT id FROM public.enrollments WHERE student_id IN (
-                SELECT id FROM public.students WHERE school_id = auth.get_user_school_id()
-            )
+CREATE POLICY "School users can view grades" ON public.grades
+    FOR SELECT TO authenticated USING (
+        EXISTS (
+            SELECT 1 from public.enrollments e
+            join public.students s on s.id = e.student_id
+            where e.id = grades.enrollment_id AND s.school_id = public.current_user_school_id()
         )
+    );
+
+CREATE POLICY "Authorized teachers can write grades" ON public.grades
+    FOR ALL TO authenticated USING (
+        EXISTS (
+            SELECT 1 from public.enrollments e
+            join public.students s on s.id = e.student_id
+            where e.id = grades.enrollment_id AND s.school_id = public.current_user_school_id()
+        )
+        AND (public.current_user_has_role('DIRECTOR') OR public.current_user_has_role('TEACHER') OR public.current_user_has_role('ADMIN'))
     );
 
 -- 18. ATTENDANCE
-CREATE POLICY attendance_isolation ON public.attendance
-    FOR ALL USING (
-        enrollment_id IN (
-            SELECT id FROM public.enrollments WHERE student_id IN (
-                SELECT id FROM public.students WHERE school_id = auth.get_user_school_id()
-            )
+CREATE POLICY "School users can view attendance" ON public.attendance
+    FOR SELECT TO authenticated USING (
+        EXISTS (
+            SELECT 1 from public.enrollments e
+            join public.students s on s.id = e.student_id
+            where e.id = attendance.enrollment_id AND s.school_id = public.current_user_school_id()
         )
     );
 
+CREATE POLICY "Authorized teachers can write attendance" ON public.attendance
+    FOR ALL TO authenticated USING (
+        EXISTS (
+            SELECT 1 from public.enrollments e
+            join public.students s on s.id = e.student_id
+            where e.id = attendance.enrollment_id AND s.school_id = public.current_user_school_id()
+        )
+        AND (public.current_user_has_role('DIRECTOR') OR public.current_user_has_role('TEACHER') OR public.current_user_has_role('ADMIN'))
+    );
+
 -- 19. PAYMENTS
-CREATE POLICY payments_isolation ON public.payments
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "School users can view payments" ON public.payments
+    FOR SELECT TO authenticated USING (school_id = public.current_user_school_id());
+
+CREATE POLICY "Authorized accountants can write payments" ON public.payments
+    FOR ALL TO authenticated USING (
+        school_id = public.current_user_school_id()
+        AND (public.current_user_has_role('DIRECTOR') OR public.current_user_has_role('ACCOUNTANT') OR public.current_user_has_role('SECRETARY'))
+    );
 
 -- 20. NOTIFICATIONS
-CREATE POLICY notifications_isolation ON public.notifications
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "Users can view own notifications" ON public.notifications
+    FOR SELECT TO authenticated USING (recipient_id = auth.uid());
+
+CREATE POLICY "Authorized staff write notifications" ON public.notifications
+    FOR ALL TO authenticated USING (
+        school_id = public.current_user_school_id()
+        AND (public.current_user_has_role('DIRECTOR') OR public.current_user_has_role('ADMIN') OR public.current_user_has_role('SECRETARY'))
+    );
 
 -- 21. SCHOOL SETTINGS
-CREATE POLICY settings_isolation ON public.school_settings
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "School users can view settings" ON public.school_settings
+    FOR SELECT TO authenticated USING (school_id = public.current_user_school_id());
+
+CREATE POLICY "Directors can update settings" ON public.school_settings
+    FOR UPDATE TO authenticated USING (
+        school_id = public.current_user_school_id()
+        AND public.current_user_has_role('DIRECTOR')
+    ) WITH CHECK (school_id = public.current_user_school_id());
 
 -- 22. GRADING MODES
-CREATE POLICY grading_modes_isolation ON public.grading_modes
-    FOR ALL USING (school_id = auth.get_user_school_id());
+CREATE POLICY "Grading modes isolation" ON public.grading_modes
+    FOR ALL USING (school_id = public.current_user_school_id());
 
 -- 23. GRADING LABELS
-CREATE POLICY grading_labels_isolation ON public.grading_labels
+CREATE POLICY "Grading labels isolation" ON public.grading_labels
     FOR ALL USING (
-        grading_mode_id IN (SELECT id FROM public.grading_modes WHERE school_id = auth.get_user_school_id())
+        grading_mode_id IN (SELECT id FROM public.grading_modes WHERE school_id = public.current_user_school_id())
     );

@@ -23,6 +23,9 @@ ALTER TABLE public.grades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.school_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.grading_modes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.grading_labels ENABLE ROW LEVEL SECURITY;
 
 -- ==========================================
 -- HELPER FUNCTIONS FOR RLS MULTI-TENANCY
@@ -150,3 +153,17 @@ CREATE POLICY payments_isolation ON public.payments
 -- 20. NOTIFICATIONS
 CREATE POLICY notifications_isolation ON public.notifications
     FOR ALL USING (school_id = auth.get_user_school_id());
+
+-- 21. SCHOOL SETTINGS
+CREATE POLICY settings_isolation ON public.school_settings
+    FOR ALL USING (school_id = auth.get_user_school_id());
+
+-- 22. GRADING MODES
+CREATE POLICY grading_modes_isolation ON public.grading_modes
+    FOR ALL USING (school_id = auth.get_user_school_id());
+
+-- 23. GRADING LABELS
+CREATE POLICY grading_labels_isolation ON public.grading_labels
+    FOR ALL USING (
+        grading_mode_id IN (SELECT id FROM public.grading_modes WHERE school_id = auth.get_user_school_id())
+    );

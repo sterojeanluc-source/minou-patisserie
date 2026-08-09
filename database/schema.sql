@@ -540,6 +540,131 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 
 
 -- ============================================================
+-- 21. SCHOOL SETTINGS (LP-CODE-003)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.school_settings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    school_id UUID NOT NULL
+        REFERENCES public.schools(id)
+        ON DELETE CASCADE,
+
+    -- GENERAL
+    default_language TEXT NOT NULL DEFAULT 'fr',
+    timezone TEXT NOT NULL DEFAULT 'America/Port-au-Prince',
+    currency TEXT NOT NULL DEFAULT 'HTG',
+
+    -- ACADEMIC STRUCTURE
+    period_structure TEXT NOT NULL DEFAULT 'custom'
+        CHECK (
+            period_structure IN (
+                'trimester',
+                'semester',
+                'quarter',
+                'custom'
+            )
+        ),
+
+    period_count INTEGER NOT NULL DEFAULT 3
+        CHECK (period_count > 0 AND period_count <= 12),
+
+    -- GRADING
+    grading_scale NUMERIC(6,2) NOT NULL DEFAULT 20
+        CHECK (grading_scale > 0),
+
+    passing_grade NUMERIC(6,2) NOT NULL DEFAULT 10
+        CHECK (passing_grade >= 0),
+
+    ranking_enabled BOOLEAN NOT NULL DEFAULT true,
+    coefficient_enabled BOOLEAN NOT NULL DEFAULT true,
+
+    -- STUDENT FEATURES
+    attendance_enabled BOOLEAN NOT NULL DEFAULT true,
+    behavior_tracking_enabled BOOLEAN NOT NULL DEFAULT true,
+    student_documents_enabled BOOLEAN NOT NULL DEFAULT true,
+
+    -- PARENT FEATURES
+    parent_bulletin_access BOOLEAN NOT NULL DEFAULT true,
+    parent_attendance_access BOOLEAN NOT NULL DEFAULT true,
+    parent_grades_access BOOLEAN NOT NULL DEFAULT true,
+    parent_finance_access BOOLEAN NOT NULL DEFAULT true,
+
+    -- KINDERGARTEN
+    kindergarten_enabled BOOLEAN NOT NULL DEFAULT true,
+    kindergarten_narrative_reports BOOLEAN NOT NULL DEFAULT true,
+    kindergarten_pickup_security BOOLEAN NOT NULL DEFAULT true,
+
+    -- FINANCE
+    payments_enabled BOOLEAN NOT NULL DEFAULT true,
+    online_payments_enabled BOOLEAN NOT NULL DEFAULT true,
+    payment_receipts_enabled BOOLEAN NOT NULL DEFAULT true,
+
+    -- COMMUNICATION
+    notifications_enabled BOOLEAN NOT NULL DEFAULT true,
+    whatsapp_enabled BOOLEAN NOT NULL DEFAULT false,
+    sms_enabled BOOLEAN NOT NULL DEFAULT false,
+    email_enabled BOOLEAN NOT NULL DEFAULT false,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (school_id)
+);
+
+
+-- ============================================================
+-- 22. GRADING MODES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.grading_modes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    school_id UUID NOT NULL
+        REFERENCES public.schools(id)
+        ON DELETE CASCADE,
+
+    name TEXT NOT NULL,
+
+    mode TEXT NOT NULL
+        CHECK (
+            mode IN (
+                'numeric',
+                'narrative',
+                'mixed'
+            )
+        ),
+
+    scale NUMERIC(6,2),
+    passing_grade NUMERIC(6,2),
+    active BOOLEAN NOT NULL DEFAULT true,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (school_id, name)
+);
+
+
+-- ============================================================
+-- 23. GRADING LABELS (Appréciations Kindergarten & Niveaux)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.grading_labels (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    grading_mode_id UUID NOT NULL
+        REFERENCES public.grading_modes(id)
+        ON DELETE CASCADE,
+
+    label TEXT NOT NULL,
+    code TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (grading_mode_id, code)
+);
+
+
+-- ============================================================
 -- INDEXES
 -- ============================================================
 
@@ -569,6 +694,12 @@ ON public.payments(student_id);
 
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient
 ON public.notifications(recipient_id);
+
+CREATE INDEX IF NOT EXISTS idx_settings_school
+ON public.school_settings(school_id);
+
+CREATE INDEX IF NOT EXISTS idx_grading_modes_school
+ON public.grading_modes(school_id);
 
 
 -- ============================================================
@@ -603,4 +734,9 @@ FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 CREATE OR REPLACE TRIGGER grades_updated_at
 BEFORE UPDATE ON public.grades
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+CREATE OR REPLACE TRIGGER settings_updated_at
+BEFORE UPDATE ON public.school_settings
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();

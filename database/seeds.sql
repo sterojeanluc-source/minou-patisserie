@@ -1,6 +1,6 @@
 -- ============================================================
 -- LEKÒL PAM — TEST JOURNEY SEED
--- LP-CODE-001 Validation
+-- LP-CODE-001 & LP-CODE-003 Validation
 -- ============================================================
 
 -- 1. Create the School
@@ -8,7 +8,7 @@ INSERT INTO public.schools (id, name, code, language, currency, timezone)
 VALUES (
     'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001',
     'Institution Test Lekòl Pam',
-    'LPM-TEST',
+    'TEST-LP',
     'fr',
     'HTG',
     'America/Port-au-Prince'
@@ -40,7 +40,7 @@ INSERT INTO public.academic_levels (id, school_id, name, code, sequence)
 VALUES
 ('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e008', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'Kindergarten', 'MAT', 1),
 ('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e009', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', '7e AF', 'F7', 2),
-('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e010', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', '8e AF', 'F8', 3)
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e110', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', '8e AF', 'F8', 3)
 ON CONFLICT (school_id, name) DO NOTHING;
 
 -- 5. Create Academic Program (Classical)
@@ -180,3 +180,84 @@ VALUES (
     'MNC-REF-2026-009843',
     'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e014'
 );
+
+-- ============================================================
+-- LP-CODE-003 SEEDS: SCHOOL PARAMETERS, MODES, AND LABELS
+-- ============================================================
+
+-- 18. Seed configuration setting parameters for school code 'TEST-LP'
+INSERT INTO public.school_settings (
+    school_id,
+    default_language,
+    timezone,
+    currency,
+    period_structure,
+    period_count,
+    grading_scale,
+    passing_grade,
+    ranking_enabled,
+    coefficient_enabled,
+    attendance_enabled,
+    behavior_tracking_enabled,
+    student_documents_enabled,
+    parent_bulletin_access,
+    parent_attendance_access,
+    parent_grades_access,
+    parent_finance_access,
+    kindergarten_enabled,
+    kindergarten_narrative_reports,
+    kindergarten_pickup_security,
+    payments_enabled,
+    online_payments_enabled,
+    payment_receipts_enabled,
+    notifications_enabled,
+    whatsapp_enabled,
+    sms_enabled,
+    email_enabled
+)
+VALUES (
+    'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001',
+    'fr',
+    'America/Port-au-Prince',
+    'HTG',
+    'custom',
+    5,
+    20,
+    10,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+    false
+) ON CONFLICT (school_id) DO UPDATE SET
+    period_count = EXCLUDED.period_count,
+    updated_at = now();
+
+-- 19. Seed Grading Modes (Numeric and Narrative)
+INSERT INTO public.grading_modes (id, school_id, name, mode, scale, passing_grade)
+VALUES
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e018', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'Évaluation numérique', 'numeric', 20.00, 10.00),
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e019', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e001', 'Évaluation Kindergarten', 'narrative', NULL, NULL)
+ON CONFLICT (school_id, name) DO NOTHING;
+
+-- 20. Seed Kindergarten narrative labels
+INSERT INTO public.grading_labels (id, grading_mode_id, label, code, sequence)
+VALUES
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e020', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e019', 'Acquis', 'ACQUIS', 1),
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e021', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e019', 'En cours d''acquisition', 'EN_COURS', 2),
+('a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e022', 'a0e0a0e0-b0b0-c0c0-d0d0-e0e0e0e0e019', 'À renforcer', 'A_RENFORCER', 3)
+ON CONFLICT (grading_mode_id, code) DO NOTHING;

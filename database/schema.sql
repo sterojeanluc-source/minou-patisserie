@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.schools (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
 
     school_id UUID REFERENCES public.schools(id) ON DELETE CASCADE,
 
@@ -299,12 +299,13 @@ CREATE TABLE IF NOT EXISTS public.guardians (
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
 
-    relationship TEXT,
+    relationship TEXT, -- Legacy fallback, relationship is better defined on student_guardians join table
 
     phone TEXT,
     email TEXT,
 
     address TEXT,
+    occupation TEXT, -- Professional occupation of guardian
 
     preferred_language TEXT DEFAULT 'fr',
 
@@ -318,6 +319,8 @@ CREATE TABLE IF NOT EXISTS public.guardians (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.student_guardians (
+    id UUID DEFAULT uuid_generate_v4(), -- Add standard unique identifier
+
     student_id UUID NOT NULL
         REFERENCES public.students(id)
         ON DELETE CASCADE,
@@ -326,7 +329,10 @@ CREATE TABLE IF NOT EXISTS public.student_guardians (
         REFERENCES public.guardians(id)
         ON DELETE CASCADE,
 
+    relationship TEXT, -- Relationship to student, ex: 'Mère', 'Père', 'Tuteur'
     is_primary BOOLEAN NOT NULL DEFAULT false,
+    is_financial_responsible BOOLEAN NOT NULL DEFAULT false,
+    is_emergency_contact BOOLEAN NOT NULL DEFAULT false,
 
     can_view_academic BOOLEAN NOT NULL DEFAULT true,
     can_view_finance BOOLEAN NOT NULL DEFAULT true,
@@ -700,6 +706,15 @@ ON public.school_settings(school_id);
 
 CREATE INDEX IF NOT EXISTS idx_grading_modes_school
 ON public.grading_modes(school_id);
+
+-- UNIQUE PARTIAL INDEXES FOR STUDENT-GUARDIAN CONSTRAINTS (LP-CODE-009)
+CREATE UNIQUE INDEX IF NOT EXISTS one_primary_guardian_per_student
+ON public.student_guardians(student_id)
+WHERE is_primary = true;
+
+CREATE UNIQUE INDEX IF NOT EXISTS one_financial_guardian_per_student
+ON public.student_guardians(student_id)
+WHERE is_financial_responsible = true;
 
 
 -- ============================================================
